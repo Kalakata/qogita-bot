@@ -30,14 +30,16 @@ def _progress_bar(progress: float) -> str:
 
 
 def _progress_color(prog: float) -> str:
-    """Color based on progress: green 100%+, warning 75%+, accent 50%+, default below."""
-    if prog >= 1.0:
+    """Color gradient: green 90%+, attention/red 75%+, warning/orange 50%+, accent 25%+, default below."""
+    if prog >= 0.90:
         return "Good"
     if prog >= 0.75:
-        return "Warning"
+        return "Attention"
     if prog >= 0.50:
+        return "Warning"
+    if prog >= 0.25:
         return "Accent"
-    return "Default"
+    return "Light"
 
 
 def _alloc_row(fid: str, prog: float, right_text: str, right_color: str = "Default", right_bold: bool = False) -> dict:
