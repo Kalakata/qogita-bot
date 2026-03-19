@@ -360,9 +360,16 @@ def send_price_drop_alert(webhook_url: str, deals: list[dict]) -> None:
                         "items": [
                             {
                                 "type": "TextBlock",
-                                "text": f"**{deal['name'][:35]}** `{deal['gtin']}`",
+                                "text": f"**{deal['name'][:40]}**",
                                 "spacing": "None",
                                 "wrap": True,
+                            },
+                            {
+                                "type": "TextBlock",
+                                "text": deal["gtin"],
+                                "spacing": "None",
+                                "isSubtle": True,
+                                "size": "Small",
                             },
                         ],
                     },
