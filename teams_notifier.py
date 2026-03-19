@@ -57,7 +57,7 @@ def _alloc_row(fid: str, prog: float, mov_text: str, gap_text: str, gap_color: s
             },
             {
                 "type": "Column",
-                "width": "stretch",
+                "width": "150px",
                 "items": [
                     {
                         "type": "TextBlock",
