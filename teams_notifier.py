@@ -39,7 +39,7 @@ def send_notification(webhook_url: str, allocation: dict) -> None:
     card_body = [
         {
             "type": "TextBlock",
-            "text": "\U0001F389 MOV REACHED!",
+            "text": "MOV REACHED!",
             "weight": "Bolder",
             "size": "Large",
             "color": "Good",
@@ -107,12 +107,6 @@ def send_notification(webhook_url: str, allocation: dict) -> None:
                 },
             ],
         },
-        {
-            "type": "TextBlock",
-            "text": f"{_progress_bar(1.0)} **100%**",
-            "fontType": "Monospace",
-            "spacing": "Medium",
-        },
     ]
 
     _post_card(webhook_url, card_body)
@@ -134,7 +128,7 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int) 
     card_body = [
         {
             "type": "TextBlock",
-            "text": "\U0001F4CA Cart Summary",
+            "text": "Cart Summary",
             "weight": "Bolder",
             "size": "Large",
         },
@@ -204,8 +198,7 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int) 
                         "items": [
                             {
                                 "type": "TextBlock",
-                                "text": f"`{_progress_bar(prog)}` {prog:.0%}",
-                                "fontType": "Monospace",
+                                "text": f"{_progress_bar(prog)} {prog:.0%}",
                                 "spacing": "None",
                                 "color": color,
                             }
