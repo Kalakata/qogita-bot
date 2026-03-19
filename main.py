@@ -2,8 +2,8 @@ import logging
 import os
 import sys
 
-from qogita_client import login, get_allocations, RateLimitError
-from teams_notifier import send_summary
+from qogita_client import login, get_allocations, get_watchlist_deals, RateLimitError
+from teams_notifier import send_summary, send_price_drop_alert
 from state import load_state, save_state
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -50,6 +50,36 @@ def run(email: str, password: str, webhook_url: str, state_path: str = STATE_PAT
 
     state["cart_qid"] = cart_qid
     state["notified"] = sorted(notified)
+
+    # --- Price drop check (every 5th run) ---
+    run_count = state.get("run_count", 0) + 1
+    state["run_count"] = run_count
+
+    if run_count % 5 == 0:
+        try:
+            deals = get_watchlist_deals(token)
+            price_alerts = state.get("price_alerts", {})
+
+            # Filter: only new deals or deals where price dropped further
+            new_deals = []
+            for deal in deals:
+                prev_price = price_alerts.get(deal["gtin"])
+                if prev_price is None or float(deal["price"]) < float(prev_price):
+                    new_deals.append(deal)
+
+            if new_deals:
+                try:
+                    send_price_drop_alert(webhook_url, new_deals)
+                    for deal in new_deals:
+                        price_alerts[deal["gtin"]] = deal["price"]
+                    logger.info("Price drop alert: %d deals", len(new_deals))
+                except Exception:
+                    logger.exception("Failed to send price drop alert.")
+
+            state["price_alerts"] = price_alerts
+        except Exception:
+            logger.exception("Failed to check watchlist prices.")
+
     save_state(state_path, state)
 
 
