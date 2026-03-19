@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Python cron job that polls the Qogita Buyer API for cart allocation MOV (Minimum Order Value) progress and sends one-way notifications to a Microsoft Teams channel via an incoming webhook when any allocation reaches its MOV threshold.
+A Python script triggered by a GitHub Actions scheduled workflow that polls the Qogita Buyer API for cart allocation MOV (Minimum Order Value) progress and sends one-way notifications to a Microsoft Teams channel via an incoming webhook when any allocation reaches its MOV threshold.
 
 ## Problem
 
@@ -10,33 +10,31 @@ Monitoring cart allocations on Qogita requires manually checking the platform. T
 
 ## Solution
 
-A lightweight Python script deployed as a Render Cron Job that:
+A lightweight Python script run by GitHub Actions on a cron schedule that:
 
 1. Authenticates with the Qogita API
 2. Fetches all allocations for the active cart
 3. Detects allocations where `movProgress >= 1.0`
 4. Sends a Teams notification for newly reached allocations
-5. Tracks notified allocations to avoid duplicates
+5. Tracks notified allocations via a `state.json` file committed back to the repo
 
 ## Architecture
 
 ```
-┌─────────────┐   poll every 5 min   ┌──────────────┐
-│ Render Cron  │ ──────────────────── │ Qogita API   │
-│ (Python)     │ ◄─────────────────── │              │
-│              │   allocation data    │              │
-│              │                      └──────────────┘
-│              │
-│              │   POST webhook       ┌─────────────────┐
-│              │ ──────────────────── │ Teams Channel   │
-└──────┬───────┘                      └─────────────────┘
-       │
-       │  read/write state
-       ▼
-┌──────────────┐
-│ Render KV    │
-│ Store        │
-└──────────────┘
+┌──────────────────┐  poll every 15 min  ┌──────────────┐
+│ GitHub Actions    │ ────────────────── │ Qogita API   │
+│ (scheduled wf)   │ ◄───────────────── │              │
+│                   │  allocation data   │              │
+│                   │                    └──────────────┘
+│                   │
+│                   │  POST webhook      ┌─────────────────┐
+│                   │ ────────────────── │ Teams Channel   │
+│                   │                    └─────────────────┘
+│                   │
+│                   │  git commit/push   ┌─────────────────┐
+│                   │ ────────────────── │ state.json      │
+└───────────────────┘                    │ (in repo)       │
+                                         └─────────────────┘
 ```
 
 ## API Details
@@ -80,64 +78,88 @@ reached = [a for a in allocations if float(a["movProgress"]) >= 1.0]
 ### `main.py` — Entry point
 
 1. Load config from environment variables
-2. Authenticate with Qogita API
-3. Fetch all allocations for the active cart
-4. Filter for `movProgress >= 1.0`
-5. Load previously notified set from Render KV store
-6. For each newly reached allocation, send Teams notification
-7. Update notified set in KV store
+2. Read `state.json` for previously notified allocations
+3. Authenticate with Qogita API
+4. Fetch all allocations for the active cart
+5. Filter for `movProgress >= 1.0`
+6. For each newly reached allocation (not in state), send Teams notification
+7. Update `state.json` with newly notified allocations
+8. Commit and push `state.json` if changed
 
-### State Tracking — Render Key-Value Store
+### State Tracking — `state.json` (git-based)
 
-- **Key:** `notified_allocations`
-- **Value:** JSON-serialized set of allocation QIDs that have already been notified
-- Prevents duplicate notifications across cron runs
-- State resets naturally when a new cart is created (new cart QID = new allocations)
+- **File:** `state.json` in repo root
+- **Contents:** JSON object mapping cart QID to a list of notified allocation FIDs
+- Prevents duplicate notifications across workflow runs
+- State resets naturally when a new cart is created (new cart QID = fresh entry)
+- Example:
+  ```json
+  {
+    "cart_qid": "c722c553-0ceb-4d76-9ad4-a32641505b74",
+    "notified": ["577MOO", "MR4LK9"]
+  }
+  ```
 
 ## Configuration
 
-All via environment variables:
+Stored as GitHub repository secrets:
 
-| Variable | Description |
-|----------|-------------|
+| Secret | Description |
+|--------|-------------|
 | `QOGITA_EMAIL` | Qogita account email |
 | `QOGITA_PASSWORD` | Qogita account password |
 | `TEAMS_WEBHOOK_URL` | Microsoft Teams incoming webhook URL |
-| `RENDER_KV_URL` | Render Key-Value store internal URL |
 
 ## File Structure
 
 ```
 qogita-bot/
-├── main.py              # Entry point for cron job
-├── qogita_client.py     # Qogita API wrapper
-├── teams_notifier.py    # Teams webhook sender
-├── requirements.txt     # requests
-├── .env.example         # Template for env vars
+├── .github/
+│   └── workflows/
+│       └── check-mov.yml    # Scheduled GitHub Actions workflow
+├── main.py                  # Entry point
+├── qogita_client.py         # Qogita API wrapper
+├── teams_notifier.py        # Teams webhook sender
+├── state.json               # Persisted notification state
+├── requirements.txt         # requests
+├── .env.example             # Template for local dev
 └── .gitignore
 ```
 
 ## Deployment
 
-- **Platform:** Render Cron Job
-- **Schedule:** `*/5 * * * *` (every 5 minutes)
+- **Platform:** GitHub Actions (scheduled workflow)
+- **Schedule:** `*/15 * * * *` (every 15 minutes — fits free tier for private repos)
 - **Runtime:** Python 3.11+
-- **State:** Render Key-Value Store (free tier)
+- **State:** `state.json` committed back to repo after each run
 - **Dependencies:** `requests`
+- **Free tier usage:** ~2,880 runs/month x ~30s = ~1,440 minutes (within 2,000 min free tier for private repos)
+
+## GitHub Actions Workflow
+
+The workflow (`.github/workflows/check-mov.yml`):
+1. Triggers on `schedule: cron "*/15 * * * *"`
+2. Checks out the repo
+3. Sets up Python 3.11
+4. Installs dependencies from `requirements.txt`
+5. Runs `main.py` with secrets as environment variables
+6. If `state.json` changed, commits and pushes it back
+
+The workflow needs `contents: write` permission to push state changes.
 
 ## Teams Webhook Setup
 
 1. Create a Teams channel for notifications (e.g., "Qogita MOV Alerts")
 2. Add an "Incoming Webhook" connector to the channel
 3. Name it (e.g., "Qogita Bot") and copy the webhook URL
-4. Set the URL as `TEAMS_WEBHOOK_URL` environment variable in Render
+4. Add the URL as a repository secret named `TEAMS_WEBHOOK_URL`
 
 ## Error Handling
 
-- Authentication failure: log error, exit (cron will retry next run)
-- API rate limit (429): log warning, exit (cron retries next run)
+- Authentication failure: log error, exit with non-zero code (workflow shows as failed)
+- API rate limit (429): log warning, exit (workflow retries next run)
 - Teams webhook failure: log error, do not mark allocation as notified (will retry next run)
-- KV store unavailable: log error, continue without state (may send duplicate notifications)
+- Git push conflict: workflow uses `pull --rebase` before pushing to handle concurrent runs
 
 ## Testing
 
