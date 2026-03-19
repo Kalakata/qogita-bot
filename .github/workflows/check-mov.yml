@@ -1,5 +1,7 @@
 name: Check MOV Progress
 on:
+  push:
+    branches: [master]
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
