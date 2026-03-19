@@ -8,10 +8,25 @@ def send_notification(webhook_url: str, allocation: dict) -> None:
     currency = allocation["movCurrency"]
 
     payload = {
-        "@type": "MessageCard",
-        "@context": "http://schema.org/extensions",
-        "summary": f"Cart allocation {fid} reached MOV",
-        "text": f"Cart allocation **{fid}** has reached its MOV! ({currency} {mov})",
+        "type": "message",
+        "attachments": [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "contentUrl": None,
+                "content": {
+                    "type": "AdaptiveCard",
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "version": "1.4",
+                    "body": [
+                        {
+                            "type": "TextBlock",
+                            "text": f"Cart allocation **{fid}** has reached its MOV! ({currency} {mov})",
+                            "wrap": True,
+                        }
+                    ],
+                },
+            }
+        ],
     }
 
     resp = requests.post(webhook_url, json=payload)

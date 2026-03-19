@@ -22,10 +22,13 @@ def test_send_notification_posts_message_card():
     call_kwargs = mock_post.call_args
     assert call_kwargs[0][0] == "https://webhook.example.com/hook"
     payload = call_kwargs[1]["json"]
-    assert payload["@type"] == "MessageCard"
-    assert "ABC123" in payload["text"]
-    assert "2800.00" in payload["text"]
-    assert "EUR" in payload["text"]
+    assert payload["type"] == "message"
+    card = payload["attachments"][0]["content"]
+    assert card["type"] == "AdaptiveCard"
+    text = card["body"][0]["text"]
+    assert "ABC123" in text
+    assert "2800.00" in text
+    assert "EUR" in text
 
 
 def test_send_notification_raises_on_failure():
