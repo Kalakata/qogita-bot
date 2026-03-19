@@ -50,7 +50,7 @@ def _alloc_row(fid: str, prog: float, mov_text: str, gap_text: str, gap_color: s
         "columns": [
             {
                 "type": "Column",
-                "width": "80px",
+                "width": "70px",
                 "items": [
                     {"type": "TextBlock", "text": f"**{fid}**", "spacing": "None"}
                 ],
@@ -69,19 +69,20 @@ def _alloc_row(fid: str, prog: float, mov_text: str, gap_text: str, gap_color: s
             },
             {
                 "type": "Column",
-                "width": "auto",
+                "width": "110px",
                 "items": [
                     {
                         "type": "TextBlock",
                         "text": mov_text,
                         "spacing": "None",
                         "isSubtle": True,
+                        "horizontalAlignment": "Right",
                     }
                 ],
             },
             {
                 "type": "Column",
-                "width": "auto",
+                "width": "110px",
                 "items": [
                     {
                         "type": "TextBlock",
@@ -90,6 +91,7 @@ def _alloc_row(fid: str, prog: float, mov_text: str, gap_text: str, gap_color: s
                         "color": gap_color,
                         "weight": "Bolder" if gap_bold else "Default",
                         "isSubtle": not gap_bold,
+                        "horizontalAlignment": "Right",
                     }
                 ],
             },
