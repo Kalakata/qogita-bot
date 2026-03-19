@@ -1,6 +1,7 @@
 from unittest.mock import patch, Mock
 from qogita_client import login
 from qogita_client import get_allocations
+from qogita_client import get_watchlist_deals
 import requests as real_requests
 import pytest
 from qogita_client import RateLimitError
@@ -162,3 +163,86 @@ def test_get_allocations_raises_rate_limit_error_on_429():
         with pytest.raises(RateLimitError) as exc_info:
             get_allocations("tok123", "cart-abc")
     assert exc_info.value.retry_after == "60"
+
+
+def test_get_watchlist_deals_filters_by_discount():
+    page1 = Mock()
+    page1.status_code = 200
+    page1.raise_for_status = Mock()
+    page1.json.return_value = {
+        "results": [
+            {
+                "gtin": "111",
+                "name": "Big Deal Product",
+                "price": "3.00",
+                "priceCurrency": "EUR",
+                "targetPrice": "10.00",
+                "availableQuantity": 100,
+            },
+            {
+                "gtin": "222",
+                "name": "Small Deal Product",
+                "price": "8.00",
+                "priceCurrency": "EUR",
+                "targetPrice": "10.00",
+                "availableQuantity": 50,
+            },
+            {
+                "gtin": "333",
+                "name": "No Price Product",
+                "price": None,
+                "priceCurrency": "EUR",
+                "targetPrice": "5.00",
+                "availableQuantity": 0,
+            },
+        ],
+        "next": None,
+    }
+
+    with patch("qogita_client.requests.get", return_value=page1):
+        deals = get_watchlist_deals("tok123", min_discount=0.40)
+
+    assert len(deals) == 1
+    assert deals[0]["gtin"] == "111"
+    assert deals[0]["name"] == "Big Deal Product"
+    assert deals[0]["price"] == "3.00"
+    assert deals[0]["targetPrice"] == "10.00"
+    assert abs(deals[0]["discount"] - 0.70) < 0.01
+
+
+def test_get_watchlist_deals_paginates():
+    page1 = Mock()
+    page1.status_code = 200
+    page1.raise_for_status = Mock()
+    page1.json.return_value = {
+        "results": [
+            {"gtin": "A", "name": "A", "price": "1.00", "priceCurrency": "EUR", "targetPrice": "10.00", "availableQuantity": 10},
+        ],
+        "next": "http://api.qogita.com/watchlist/items/?page=2",
+    }
+    page2 = Mock()
+    page2.status_code = 200
+    page2.raise_for_status = Mock()
+    page2.json.return_value = {
+        "results": [
+            {"gtin": "B", "name": "B", "price": "2.00", "priceCurrency": "EUR", "targetPrice": "10.00", "availableQuantity": 5},
+        ],
+        "next": None,
+    }
+
+    with patch("qogita_client.requests.get", side_effect=[page1, page2]):
+        deals = get_watchlist_deals("tok123", min_discount=0.40)
+
+    assert len(deals) == 2
+    assert deals[0]["gtin"] == "A"
+    assert deals[1]["gtin"] == "B"
+
+
+def test_get_watchlist_deals_raises_on_429():
+    mock_resp = Mock()
+    mock_resp.status_code = 429
+    mock_resp.headers = {"Retry-After": "30"}
+
+    with patch("qogita_client.requests.get", return_value=mock_resp):
+        with pytest.raises(RateLimitError):
+            get_watchlist_deals("tok123")

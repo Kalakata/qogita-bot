@@ -57,3 +57,55 @@ def get_allocations(token: str, cart_qid: str) -> list[dict]:
         page += 1
 
     return allocations
+
+
+def get_watchlist_deals(token: str, min_discount: float = 0.40) -> list[dict]:
+    """Fetch watchlist items with price at least min_discount below target."""
+    headers = {"Authorization": f"Bearer {token}"}
+    deals = []
+    page = 1
+
+    while True:
+        resp = requests.get(
+            f"{API_URL}/watchlist/items/",
+            headers=headers,
+            params={"page": page, "size": 50, "is_available": "true", "are_targets_met": "true"},
+        )
+        if resp.status_code == 429:
+            raise RateLimitError(retry_after=resp.headers.get("Retry-After"))
+        resp.raise_for_status()
+        data = resp.json()
+        results = data.get("results", [])
+        if not results:
+            break
+
+        for item in results:
+            price = item.get("price")
+            target = item.get("targetPrice")
+            if price is None or target is None:
+                continue
+            try:
+                price_f = float(price)
+                target_f = float(target)
+                if target_f <= 0:
+                    continue
+                discount = 1 - (price_f / target_f)
+                if discount >= min_discount:
+                    deals.append({
+                        "gtin": item["gtin"],
+                        "name": item["name"],
+                        "price": price,
+                        "priceCurrency": item["priceCurrency"],
+                        "targetPrice": target,
+                        "availableQuantity": item["availableQuantity"],
+                        "discount": round(discount, 4),
+                    })
+            except (ValueError, TypeError):
+                continue
+
+        if not data.get("next"):
+            break
+        page += 1
+
+    deals.sort(key=lambda d: d["discount"], reverse=True)
+    return deals
