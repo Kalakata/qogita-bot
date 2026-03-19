@@ -94,6 +94,7 @@ def get_watchlist_deals(token: str, min_discount: float = 0.40) -> list[dict]:
                     deals.append({
                         "gtin": item["gtin"],
                         "name": item["name"],
+                        "fid": item.get("fid", ""),
                         "slug": item.get("slug", ""),
                         "price": price,
                         "priceCurrency": item["priceCurrency"],

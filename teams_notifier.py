@@ -366,7 +366,7 @@ def send_price_drop_alert(webhook_url: str, deals: list[dict], gist_url: str | N
                             },
                             {
                                 "type": "TextBlock",
-                                "text": f"[{deal['gtin']}](https://www.qogita.com/product/{deal.get('slug', '')})",
+                                "text": f"[{deal['gtin']}](https://www.qogita.com/products/{deal.get('fid', '')}/{deal.get('slug', '')}/)",
                                 "spacing": "None",
                                 "isSubtle": True,
                                 "size": "Small",
