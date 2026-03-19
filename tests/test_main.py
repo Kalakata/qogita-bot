@@ -3,7 +3,7 @@ from unittest.mock import patch, Mock, call
 from main import run
 
 
-def test_run_sends_notification_for_new_mov_reached(tmp_path):
+def test_run_sends_summary_with_newly_reached(tmp_path):
     state_path = str(tmp_path / "state.json")
     with open(state_path, "w") as f:
         json.dump({}, f)
@@ -15,7 +15,7 @@ def test_run_sends_notification_for_new_mov_reached(tmp_path):
 
     with patch("main.login", return_value=("tok", "cart-1")), \
          patch("main.get_allocations", return_value=allocations), \
-         patch("main.send_notification") as mock_notify:
+         patch("main.send_summary") as mock_summary:
         run(
             email="a@b.com",
             password="pass",
@@ -23,7 +23,9 @@ def test_run_sends_notification_for_new_mov_reached(tmp_path):
             state_path=state_path,
         )
 
-    mock_notify.assert_called_once_with("https://hook.example.com", allocations[0])
+    mock_summary.assert_called_once()
+    call_kwargs = mock_summary.call_args
+    assert call_kwargs[1]["newly_reached"][0]["fid"] == "A1"
 
     with open(state_path) as f:
         state = json.load(f)
@@ -43,7 +45,7 @@ def test_run_skips_already_notified(tmp_path):
 
     with patch("main.login", return_value=("tok", "cart-1")), \
          patch("main.get_allocations", return_value=allocations), \
-         patch("main.send_notification") as mock_notify:
+         patch("main.send_summary") as mock_summary:
         run(
             email="a@b.com",
             password="pass",
@@ -51,7 +53,7 @@ def test_run_skips_already_notified(tmp_path):
             state_path=state_path,
         )
 
-    mock_notify.assert_not_called()
+    mock_summary.assert_not_called()
 
 
 def test_run_resets_state_on_cart_change(tmp_path):
@@ -65,7 +67,7 @@ def test_run_resets_state_on_cart_change(tmp_path):
 
     with patch("main.login", return_value=("tok", "new-cart")), \
          patch("main.get_allocations", return_value=allocations), \
-         patch("main.send_notification") as mock_notify:
+         patch("main.send_summary") as mock_summary:
         run(
             email="a@b.com",
             password="pass",
@@ -73,7 +75,7 @@ def test_run_resets_state_on_cart_change(tmp_path):
             state_path=state_path,
         )
 
-    mock_notify.assert_called_once()
+    mock_summary.assert_called_once()
     with open(state_path) as f:
         state = json.load(f)
     assert state["cart_qid"] == "new-cart"
@@ -87,7 +89,7 @@ def test_run_exits_cleanly_when_no_active_cart(tmp_path):
 
     with patch("main.login", return_value=("tok", None)), \
          patch("main.get_allocations") as mock_alloc, \
-         patch("main.send_notification") as mock_notify:
+         patch("main.send_summary") as mock_summary:
         run(
             email="a@b.com",
             password="pass",
@@ -96,7 +98,7 @@ def test_run_exits_cleanly_when_no_active_cart(tmp_path):
         )
 
     mock_alloc.assert_not_called()
-    mock_notify.assert_not_called()
+    mock_summary.assert_not_called()
 
 
 def test_run_skips_allocation_with_non_numeric_mov_progress(tmp_path):
@@ -112,7 +114,7 @@ def test_run_skips_allocation_with_non_numeric_mov_progress(tmp_path):
 
     with patch("main.login", return_value=("tok", "cart-1")), \
          patch("main.get_allocations", return_value=allocations), \
-         patch("main.send_notification") as mock_notify:
+         patch("main.send_summary") as mock_summary:
         run(
             email="a@b.com",
             password="pass",
@@ -120,9 +122,10 @@ def test_run_skips_allocation_with_non_numeric_mov_progress(tmp_path):
             state_path=state_path,
         )
 
-    mock_notify.assert_called_once()
-    call_alloc = mock_notify.call_args[0][1]
-    assert call_alloc["fid"] == "GOOD1"
+    mock_summary.assert_called_once()
+    newly = mock_summary.call_args[1]["newly_reached"]
+    assert len(newly) == 1
+    assert newly[0]["fid"] == "GOOD1"
 
 
 def test_run_does_not_save_fid_when_notification_fails(tmp_path):
@@ -136,7 +139,7 @@ def test_run_does_not_save_fid_when_notification_fails(tmp_path):
 
     with patch("main.login", return_value=("tok", "cart-1")), \
          patch("main.get_allocations", return_value=allocations), \
-         patch("main.send_notification", side_effect=Exception("webhook down")):
+         patch("main.send_summary", side_effect=Exception("webhook down")):
         run(
             email="a@b.com",
             password="pass",

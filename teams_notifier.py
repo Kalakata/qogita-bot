@@ -40,91 +40,51 @@ def _progress_color(prog: float) -> str:
     return "Default"
 
 
-def send_notification(webhook_url: str, allocation: dict) -> None:
-    """Send a Teams notification for an allocation that reached MOV."""
-    fid = allocation["fid"]
-    mov = allocation["mov"]
-    currency = allocation["movCurrency"]
-    subtotal = allocation["subtotal"]
-
-    card_body = [
-        {
-            "type": "TextBlock",
-            "text": "MOV REACHED!",
-            "weight": "Bolder",
-            "size": "Large",
-            "color": "Good",
-        },
-        {
-            "type": "ColumnSet",
-            "columns": [
-                {
-                    "type": "Column",
-                    "width": "stretch",
-                    "items": [
-                        {
-                            "type": "TextBlock",
-                            "text": "Cart",
-                            "weight": "Bolder",
-                            "isSubtle": True,
-                        },
-                        {
-                            "type": "TextBlock",
-                            "text": fid,
-                            "size": "ExtraLarge",
-                            "weight": "Bolder",
-                            "spacing": "None",
-                        },
-                    ],
-                },
-                {
-                    "type": "Column",
-                    "width": "stretch",
-                    "items": [
-                        {
-                            "type": "TextBlock",
-                            "text": "MOV Target",
-                            "weight": "Bolder",
-                            "isSubtle": True,
-                        },
-                        {
-                            "type": "TextBlock",
-                            "text": f"{currency} {mov}",
-                            "size": "ExtraLarge",
-                            "weight": "Bolder",
-                            "spacing": "None",
-                        },
-                    ],
-                },
-                {
-                    "type": "Column",
-                    "width": "stretch",
-                    "items": [
-                        {
-                            "type": "TextBlock",
-                            "text": "Cart Value",
-                            "weight": "Bolder",
-                            "isSubtle": True,
-                        },
-                        {
-                            "type": "TextBlock",
-                            "text": f"{currency} {subtotal}",
-                            "size": "ExtraLarge",
-                            "weight": "Bolder",
-                            "color": "Good",
-                            "spacing": "None",
-                        },
-                    ],
-                },
-            ],
-        },
-    ]
-
-    _post_card(webhook_url, card_body)
+def _alloc_row(fid: str, prog: float, right_text: str, right_color: str = "Default", right_bold: bool = False) -> dict:
+    """Build a single allocation row with fid, progress bar, and right-side text."""
+    return {
+        "type": "ColumnSet",
+        "spacing": "Small",
+        "columns": [
+            {
+                "type": "Column",
+                "width": "80px",
+                "items": [
+                    {"type": "TextBlock", "text": f"**{fid}**", "spacing": "None"}
+                ],
+            },
+            {
+                "type": "Column",
+                "width": "stretch",
+                "items": [
+                    {
+                        "type": "TextBlock",
+                        "text": f"{_progress_bar(prog)} {prog:.0%}",
+                        "spacing": "None",
+                        "color": _progress_color(prog),
+                    }
+                ],
+            },
+            {
+                "type": "Column",
+                "width": "auto",
+                "items": [
+                    {
+                        "type": "TextBlock",
+                        "text": right_text,
+                        "spacing": "None",
+                        "color": right_color,
+                        "weight": "Bolder" if right_bold else "Default",
+                        "isSubtle": not right_bold,
+                    }
+                ],
+            },
+        ],
+    }
 
 
-def send_summary(webhook_url: str, allocations: list[dict], reached_count: int) -> None:
-    """Send a summary of all allocations to Teams."""
+def send_summary(webhook_url: str, allocations: list[dict], reached_count: int, newly_reached: list[dict] | None = None) -> None:
+    """Send a combined summary card to Teams, with MOV alerts at the top if any."""
     total = len(allocations)
 
     # Parse all allocations with valid progress
@@ -146,7 +106,7 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int) 
     not_reached.sort(key=lambda x: x[0], reverse=True)
     top5 = not_reached[:5]
 
-    # Cheapest to complete: smallest gap to MOV (excluding reached)
+    # Cheapest to complete
     with_gap = []
     for p, a in not_reached:
         try:
@@ -159,14 +119,93 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int) 
     cheapest5 = with_gap[:5]
 
     # --- Build card ---
+    card_body = []
 
-    card_body = [
+    # --- MOV reached section (if any newly reached) ---
+    if newly_reached:
+        card_body.append(
+            {
+                "type": "TextBlock",
+                "text": "MOV REACHED!",
+                "weight": "Bolder",
+                "size": "Large",
+                "color": "Good",
+            }
+        )
+
+        for alloc in newly_reached:
+            card_body.append(
+                {
+                    "type": "ColumnSet",
+                    "spacing": "Small",
+                    "columns": [
+                        {
+                            "type": "Column",
+                            "width": "stretch",
+                            "items": [
+                                {"type": "TextBlock", "text": "Cart", "isSubtle": True},
+                                {
+                                    "type": "TextBlock",
+                                    "text": alloc["fid"],
+                                    "size": "Large",
+                                    "weight": "Bolder",
+                                    "spacing": "None",
+                                },
+                            ],
+                        },
+                        {
+                            "type": "Column",
+                            "width": "stretch",
+                            "items": [
+                                {"type": "TextBlock", "text": "MOV Target", "isSubtle": True},
+                                {
+                                    "type": "TextBlock",
+                                    "text": f"{alloc['movCurrency']} {alloc['mov']}",
+                                    "size": "Large",
+                                    "weight": "Bolder",
+                                    "spacing": "None",
+                                },
+                            ],
+                        },
+                        {
+                            "type": "Column",
+                            "width": "stretch",
+                            "items": [
+                                {"type": "TextBlock", "text": "Cart Value", "isSubtle": True},
+                                {
+                                    "type": "TextBlock",
+                                    "text": f"{alloc['movCurrency']} {alloc['subtotal']}",
+                                    "size": "Large",
+                                    "weight": "Bolder",
+                                    "color": "Good",
+                                    "spacing": "None",
+                                },
+                            ],
+                        },
+                    ],
+                }
+            )
+
+        # Separator
+        card_body.append(
+            {
+                "type": "TextBlock",
+                "text": " ",
+                "spacing": "Medium",
+                "separator": True,
+            }
+        )
+
+    # --- Summary stats ---
+    card_body.append(
         {
             "type": "TextBlock",
             "text": "Cart Summary",
             "weight": "Bolder",
             "size": "Large",
-        },
+        }
+    )
+    card_body.append(
         {
             "type": "ColumnSet",
             "columns": [
@@ -200,7 +239,9 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int) 
                     ],
                 },
             ],
-        },
+        }
+    )
+    card_body.append(
         {
             "type": "ColumnSet",
             "spacing": "Small",
@@ -235,60 +276,22 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int) 
                     ],
                 },
             ],
-        },
-        # --- Top 5 closest ---
+        }
+    )
+
+    # --- Top 5 closest ---
+    card_body.append(
         {
             "type": "TextBlock",
             "text": "**Top 5 Closest to MOV:**",
             "weight": "Bolder",
             "spacing": "Medium",
-        },
-    ]
-
+        }
+    )
     for prog, a in top5:
         gap = float(a["mov"]) - float(a["subtotal"])
         card_body.append(
-            {
-                "type": "ColumnSet",
-                "spacing": "Small",
-                "columns": [
-                    {
-                        "type": "Column",
-                        "width": "80px",
-                        "items": [
-                            {
-                                "type": "TextBlock",
-                                "text": f"**{a['fid']}**",
-                                "spacing": "None",
-                            }
-                        ],
-                    },
-                    {
-                        "type": "Column",
-                        "width": "stretch",
-                        "items": [
-                            {
-                                "type": "TextBlock",
-                                "text": f"{_progress_bar(prog)} {prog:.0%}",
-                                "spacing": "None",
-                                "color": _progress_color(prog),
-                            }
-                        ],
-                    },
-                    {
-                        "type": "Column",
-                        "width": "auto",
-                        "items": [
-                            {
-                                "type": "TextBlock",
-                                "text": f"needs {a['movCurrency']} {gap:,.2f}",
-                                "isSubtle": True,
-                                "spacing": "None",
-                            }
-                        ],
-                    },
-                ],
-            }
+            _alloc_row(a["fid"], prog, f"needs {a['movCurrency']} {gap:,.2f}")
         )
 
     # --- Cheapest to complete ---
@@ -300,51 +303,9 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int) 
             "spacing": "Medium",
         }
     )
-
     for gap, prog, a in cheapest5:
         card_body.append(
-            {
-                "type": "ColumnSet",
-                "spacing": "Small",
-                "columns": [
-                    {
-                        "type": "Column",
-                        "width": "80px",
-                        "items": [
-                            {
-                                "type": "TextBlock",
-                                "text": f"**{a['fid']}**",
-                                "spacing": "None",
-                            }
-                        ],
-                    },
-                    {
-                        "type": "Column",
-                        "width": "stretch",
-                        "items": [
-                            {
-                                "type": "TextBlock",
-                                "text": f"{_progress_bar(prog)} {prog:.0%}",
-                                "spacing": "None",
-                                "color": _progress_color(prog),
-                            }
-                        ],
-                    },
-                    {
-                        "type": "Column",
-                        "width": "auto",
-                        "items": [
-                            {
-                                "type": "TextBlock",
-                                "text": f"needs {a['movCurrency']} {gap:,.2f}",
-                                "weight": "Bolder",
-                                "spacing": "None",
-                                "color": "Good",
-                            }
-                        ],
-                    },
-                ],
-            }
+            _alloc_row(a["fid"], prog, f"needs {a['movCurrency']} {gap:,.2f}", right_color="Good", right_bold=True)
         )
 
     _post_card(webhook_url, card_body)

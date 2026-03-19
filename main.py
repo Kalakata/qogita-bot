@@ -3,7 +3,7 @@ import os
 import sys
 
 from qogita_client import login, get_allocations, RateLimitError
-from teams_notifier import send_notification, send_summary
+from teams_notifier import send_summary
 from state import load_state, save_state
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -37,26 +37,16 @@ def run(email: str, password: str, webhook_url: str, state_path: str = STATE_PAT
             logger.warning("Skipping allocation %s: invalid movProgress %r", a.get("fid"), a.get("movProgress"))
 
     notified = set(state.get("notified", []))
-    new_notifications = False
+    newly_reached = [a for a in reached if a["fid"] not in notified]
 
-    for alloc in reached:
-        fid = alloc["fid"]
-        if fid in notified:
-            continue
-
+    if newly_reached:
         try:
-            send_notification(webhook_url, alloc)
-            notified.add(fid)
-            new_notifications = True
-            logger.info("Notified: %s (MOV %s %s)", fid, alloc["movCurrency"], alloc["mov"])
+            send_summary(webhook_url, allocations, len(reached), newly_reached=newly_reached)
+            for alloc in newly_reached:
+                notified.add(alloc["fid"])
+                logger.info("Notified: %s (MOV %s %s)", alloc["fid"], alloc["movCurrency"], alloc["mov"])
         except Exception:
-            logger.exception("Failed to notify for %s. Will retry next run.", fid)
-
-    if new_notifications:
-        try:
-            send_summary(webhook_url, allocations, len(reached))
-        except Exception:
-            logger.exception("Failed to send summary.")
+            logger.exception("Failed to send notification. Will retry next run.")
 
     state["cart_qid"] = cart_qid
     state["notified"] = sorted(notified)
