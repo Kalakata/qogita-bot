@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 STATE_PATH = "state.json"
-GIST_ID = "105c03d69475231dcdd5bf4216b78746"
+GIST_ID = os.environ.get("GIST_ID", "")
 
 
 def update_gist(deals: list[dict]) -> str | None:
@@ -89,7 +89,7 @@ def run(email: str, password: str, webhook_url: str, state_path: str = STATE_PAT
         try:
             deals = get_watchlist_deals(token)
             if deals:
-                gist_url = update_gist(deals) if len(deals) > 10 else None
+                gist_url = update_gist(deals) if len(deals) > 10 and GIST_ID else None
                 send_price_drop_alert(webhook_url, deals, gist_url=gist_url)
                 logger.info("Price drop report: %d deals", len(deals))
         except Exception:

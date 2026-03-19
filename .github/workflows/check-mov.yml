@@ -31,6 +31,7 @@ jobs:
           QOGITA_EMAIL: ${{ secrets.QOGITA_EMAIL }}
           QOGITA_PASSWORD: ${{ secrets.QOGITA_PASSWORD }}
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          GIST_ID: ${{ secrets.GIST_ID }}
 
       - name: Commit state changes
         run: |
