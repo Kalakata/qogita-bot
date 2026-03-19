@@ -37,6 +37,7 @@ def run(email: str, password: str, webhook_url: str, state_path: str = STATE_PAT
             logger.warning("Skipping allocation %s: invalid movProgress %r", a.get("fid"), a.get("movProgress"))
 
     notified = set(state.get("notified", []))
+    new_notifications = False
 
     for alloc in reached:
         fid = alloc["fid"]
@@ -46,14 +47,16 @@ def run(email: str, password: str, webhook_url: str, state_path: str = STATE_PAT
         try:
             send_notification(webhook_url, alloc)
             notified.add(fid)
+            new_notifications = True
             logger.info("Notified: %s (MOV %s %s)", fid, alloc["movCurrency"], alloc["mov"])
         except Exception:
             logger.exception("Failed to notify for %s. Will retry next run.", fid)
 
-    try:
-        send_summary(webhook_url, allocations, len(reached))
-    except Exception:
-        logger.exception("Failed to send summary.")
+    if new_notifications:
+        try:
+            send_summary(webhook_url, allocations, len(reached))
+        except Exception:
+            logger.exception("Failed to send summary.")
 
     state["cart_qid"] = cart_qid
     state["notified"] = sorted(notified)
