@@ -199,6 +199,12 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int) 
                         },
                     ],
                 },
+            ],
+        },
+        {
+            "type": "ColumnSet",
+            "spacing": "Small",
+            "columns": [
                 {
                     "type": "Column",
                     "width": "stretch",
