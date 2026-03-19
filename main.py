@@ -3,7 +3,7 @@ import os
 import sys
 
 from qogita_client import login, get_allocations, RateLimitError
-from teams_notifier import send_notification
+from teams_notifier import send_notification, send_summary
 from state import load_state, save_state
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -49,6 +49,11 @@ def run(email: str, password: str, webhook_url: str, state_path: str = STATE_PAT
             logger.info("Notified: %s (MOV %s %s)", fid, alloc["movCurrency"], alloc["mov"])
         except Exception:
             logger.exception("Failed to notify for %s. Will retry next run.", fid)
+
+    try:
+        send_summary(webhook_url, allocations, len(reached))
+    except Exception:
+        logger.exception("Failed to send summary.")
 
     state["cart_qid"] = cart_qid
     state["notified"] = sorted(notified)

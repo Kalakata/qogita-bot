@@ -1,5 +1,5 @@
 from unittest.mock import patch, Mock
-from teams_notifier import send_notification
+from teams_notifier import send_notification, send_summary
 
 
 def test_send_notification_posts_message_card():
@@ -49,3 +49,27 @@ def test_send_notification_raises_on_failure():
     with patch("teams_notifier.requests.post", return_value=mock_resp):
         with pytest.raises(Exception):
             send_notification("https://webhook.example.com/hook", allocation)
+
+
+def test_send_summary_posts_top_5():
+    mock_resp = Mock()
+    mock_resp.status_code = 202
+    mock_resp.raise_for_status = Mock()
+
+    allocations = [
+        {"fid": "A1", "movProgress": "0.92", "mov": "2800.00", "movCurrency": "EUR", "subtotal": "2581.00"},
+        {"fid": "B2", "movProgress": "0.86", "mov": "450.00", "movCurrency": "EUR", "subtotal": "387.00"},
+        {"fid": "C3", "movProgress": "0.50", "mov": "600.00", "movCurrency": "EUR", "subtotal": "300.00"},
+    ]
+
+    with patch("teams_notifier.requests.post", return_value=mock_resp) as mock_post:
+        send_summary("https://webhook.example.com/hook", allocations, reached_count=0)
+
+    mock_post.assert_called_once()
+    payload = mock_post.call_args[1]["json"]
+    card = payload["attachments"][0]["content"]
+    text = card["body"][0]["text"]
+    assert "3 allocations" in text
+    assert "0 reached MOV" in text
+    assert "A1" in text
+    assert "B2" in text
