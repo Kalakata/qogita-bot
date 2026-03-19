@@ -42,8 +42,8 @@ def _progress_color(prog: float) -> str:
     return "Light"
 
 
-def _alloc_row(fid: str, prog: float, right_text: str, right_color: str = "Default", right_bold: bool = False) -> dict:
-    """Build a single allocation row with fid, progress bar, and right-side text."""
+def _alloc_row(fid: str, prog: float, mov_text: str, gap_text: str, gap_color: str = "Default", gap_bold: bool = False) -> dict:
+    """Build a single allocation row with fid, progress bar, MOV amount, and gap."""
     return {
         "type": "ColumnSet",
         "spacing": "Small",
@@ -73,11 +73,23 @@ def _alloc_row(fid: str, prog: float, right_text: str, right_color: str = "Defau
                 "items": [
                     {
                         "type": "TextBlock",
-                        "text": right_text,
+                        "text": mov_text,
                         "spacing": "None",
-                        "color": right_color,
-                        "weight": "Bolder" if right_bold else "Default",
-                        "isSubtle": not right_bold,
+                        "isSubtle": True,
+                    }
+                ],
+            },
+            {
+                "type": "Column",
+                "width": "auto",
+                "items": [
+                    {
+                        "type": "TextBlock",
+                        "text": gap_text,
+                        "spacing": "None",
+                        "color": gap_color,
+                        "weight": "Bolder" if gap_bold else "Default",
+                        "isSubtle": not gap_bold,
                     }
                 ],
             },
@@ -293,7 +305,7 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int, 
     for prog, a in top5:
         gap = float(a["mov"]) - float(a["subtotal"])
         card_body.append(
-            _alloc_row(a["fid"], prog, f"-{a['movCurrency']} {gap:,.2f}")
+            _alloc_row(a["fid"], prog, f"{a['movCurrency']} {a['mov']}", f"-{a['movCurrency']} {gap:,.2f}")
         )
 
     # --- Cheapest to complete ---
@@ -307,7 +319,7 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int, 
     )
     for gap, prog, a in cheapest5:
         card_body.append(
-            _alloc_row(a["fid"], prog, f"-{a['movCurrency']} {gap:,.2f}", right_color="Good", right_bold=True)
+            _alloc_row(a["fid"], prog, f"{a['movCurrency']} {a['mov']}", f"-{a['movCurrency']} {gap:,.2f}", gap_color="Good", gap_bold=True)
         )
 
     _post_card(webhook_url, card_body)
