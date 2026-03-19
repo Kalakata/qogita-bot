@@ -1,5 +1,8 @@
+import csv
+import io
 import logging
 import os
+import subprocess
 import sys
 from datetime import date
 
@@ -11,6 +14,34 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 STATE_PATH = "state.json"
+GIST_ID = "105c03d69475231dcdd5bf4216b78746"
+
+
+def update_gist(deals: list[dict]) -> str | None:
+    """Update the GitHub Gist with full deals CSV. Returns the gist URL or None on failure."""
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["gtin", "name", "price", "currency", "target_price", "discount", "available_qty"])
+    for d in deals:
+        writer.writerow([
+            d["gtin"], d["name"], d["price"], d["priceCurrency"],
+            d["targetPrice"], f"{d['discount']:.0%}", d["availableQuantity"],
+        ])
+
+    csv_content = buf.getvalue()
+    tmp_path = "/tmp/qogita_deals.csv"
+    with open(tmp_path, "w") as f:
+        f.write(csv_content)
+
+    try:
+        subprocess.run(
+            ["gh", "gist", "edit", GIST_ID, "-f", "qogita_deals.csv", tmp_path],
+            check=True, capture_output=True, text=True,
+        )
+        return f"https://gist.github.com/Kalakata/{GIST_ID}"
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        logger.exception("Failed to update gist.")
+        return None
 
 
 def run(email: str, password: str, webhook_url: str, state_path: str = STATE_PATH) -> None:
@@ -77,7 +108,8 @@ def run(email: str, password: str, webhook_url: str, state_path: str = STATE_PAT
 
             if new_deals:
                 try:
-                    send_price_drop_alert(webhook_url, new_deals)
+                    gist_url = update_gist(new_deals) if len(new_deals) > 10 else None
+                    send_price_drop_alert(webhook_url, new_deals, gist_url=gist_url)
                     for deal in new_deals:
                         price_alerts[deal["gtin"]] = deal["price"]
                     logger.info("Price drop alert: %d deals", len(new_deals))

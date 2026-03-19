@@ -328,8 +328,8 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int, 
     _post_card(webhook_url, card_body)
 
 
-def send_price_drop_alert(webhook_url: str, deals: list[dict]) -> None:
-    """Send a price drop alert card to Teams. Max 10 items shown."""
+def send_price_drop_alert(webhook_url: str, deals: list[dict], gist_url: str | None = None) -> None:
+    """Send a price drop alert card to Teams. Max 10 items shown, with optional link to full list."""
     shown = deals[:10]
 
     card_body = [
@@ -418,10 +418,13 @@ def send_price_drop_alert(webhook_url: str, deals: list[dict]) -> None:
         )
 
     if len(deals) > 10:
+        overflow_text = f"*...and {len(deals) - 10} more*"
+        if gist_url:
+            overflow_text += f" — [View full list]({gist_url})"
         card_body.append(
             {
                 "type": "TextBlock",
-                "text": f"*...and {len(deals) - 10} more*",
+                "text": overflow_text,
                 "isSubtle": True,
                 "spacing": "Small",
             }
