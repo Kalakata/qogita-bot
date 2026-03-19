@@ -102,7 +102,7 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int, 
     currency = valid[0][1]["movCurrency"] if valid else "EUR"
 
     # Split into reached and not-reached
-    not_reached = [(p, a) for p, a in valid if p < 1.0]
+    not_reached = [(p, a) for p, a in valid if round(p * 100) < 100]
     not_reached.sort(key=lambda x: x[0], reverse=True)
     top5 = not_reached[:5]
 
