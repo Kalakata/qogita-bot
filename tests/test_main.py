@@ -215,9 +215,10 @@ def test_run_skips_prices_on_non_5th_run(tmp_path):
 
 
 def test_run_skips_already_alerted_price(tmp_path):
+    from datetime import date
     state_path = str(tmp_path / "state.json")
     with open(state_path, "w") as f:
-        json.dump({"cart_qid": "cart-1", "notified": [], "run_count": 4, "price_alerts": {"111": "3.00"}}, f)
+        json.dump({"cart_qid": "cart-1", "notified": [], "run_count": 4, "price_alerts": {"111": "3.00"}, "price_alerts_date": date.today().isoformat()}, f)
 
     allocations = [
         {"fid": "X1", "movProgress": "0.50", "mov": "500.00", "movCurrency": "EUR", "subtotal": "250.00"},
@@ -242,9 +243,10 @@ def test_run_skips_already_alerted_price(tmp_path):
 
 
 def test_run_realerts_when_price_drops_further(tmp_path):
+    from datetime import date
     state_path = str(tmp_path / "state.json")
     with open(state_path, "w") as f:
-        json.dump({"cart_qid": "cart-1", "notified": [], "run_count": 4, "price_alerts": {"111": "3.00"}}, f)
+        json.dump({"cart_qid": "cart-1", "notified": [], "run_count": 4, "price_alerts": {"111": "3.00"}, "price_alerts_date": date.today().isoformat()}, f)
 
     allocations = [
         {"fid": "X1", "movProgress": "0.50", "mov": "500.00", "movCurrency": "EUR", "subtotal": "250.00"},

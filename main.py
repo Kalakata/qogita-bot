@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+from datetime import date
 
 from qogita_client import login, get_allocations, get_watchlist_deals, RateLimitError
 from teams_notifier import send_summary, send_price_drop_alert
@@ -54,6 +55,13 @@ def run(email: str, password: str, webhook_url: str, state_path: str = STATE_PAT
     # --- Price drop check (every 5th run) ---
     run_count = state.get("run_count", 0) + 1
     state["run_count"] = run_count
+
+    # Reset price alerts daily
+    today = date.today().isoformat()
+    if state.get("price_alerts_date") != today:
+        state["price_alerts"] = {}
+        state["price_alerts_date"] = today
+        logger.info("Daily reset of price alerts.")
 
     if run_count % 5 == 0:
         try:
