@@ -342,7 +342,7 @@ def send_price_drop_alert(webhook_url: str, deals: list[dict], gist_url: str | N
         },
         {
             "type": "TextBlock",
-            "text": f"**{len(deals)} items** 40%+ below target",
+            "text": f"**{len(deals)} items** below target",
             "spacing": "Small",
         },
     ]

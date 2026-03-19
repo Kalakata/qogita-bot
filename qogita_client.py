@@ -59,7 +59,7 @@ def get_allocations(token: str, cart_qid: str) -> list[dict]:
     return allocations
 
 
-def get_watchlist_deals(token: str, min_discount: float = 0.40) -> list[dict]:
+def get_watchlist_deals(token: str, min_discount: float = 0.0) -> list[dict]:
     """Fetch watchlist items with price at least min_discount below target."""
     headers = {"Authorization": f"Bearer {token}"}
     deals = []
