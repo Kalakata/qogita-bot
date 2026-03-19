@@ -291,7 +291,7 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int, 
     for prog, a in top5:
         gap = float(a["mov"]) - float(a["subtotal"])
         card_body.append(
-            _alloc_row(a["fid"], prog, f"needs {a['movCurrency']} {gap:,.2f}")
+            _alloc_row(a["fid"], prog, f"-{a['movCurrency']} {gap:,.2f}")
         )
 
     # --- Cheapest to complete ---
@@ -305,7 +305,7 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int, 
     )
     for gap, prog, a in cheapest5:
         card_body.append(
-            _alloc_row(a["fid"], prog, f"needs {a['movCurrency']} {gap:,.2f}", right_color="Good", right_bold=True)
+            _alloc_row(a["fid"], prog, f"-{a['movCurrency']} {gap:,.2f}", right_color="Good", right_bold=True)
         )
 
     _post_card(webhook_url, card_body)
