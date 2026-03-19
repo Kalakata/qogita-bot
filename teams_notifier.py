@@ -57,13 +57,14 @@ def _alloc_row(fid: str, prog: float, mov_text: str, gap_text: str, gap_color: s
             },
             {
                 "type": "Column",
-                "width": "150px",
+                "width": "45px",
                 "items": [
                     {
                         "type": "TextBlock",
-                        "text": f"{_progress_bar(prog)} {prog:.0%}",
+                        "text": f"{prog:.0%}",
                         "spacing": "None",
                         "color": _progress_color(prog),
+                        "weight": "Bolder",
                     }
                 ],
             },
