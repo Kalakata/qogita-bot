@@ -1,5 +1,5 @@
 from unittest.mock import patch, Mock
-from teams_notifier import send_summary
+from teams_notifier import send_summary, send_price_drop_alert
 
 
 def test_send_summary_posts_card():
@@ -63,3 +63,47 @@ def test_send_summary_raises_on_failure():
     with patch("teams_notifier.requests.post", return_value=mock_resp):
         with pytest.raises(Exception):
             send_summary("https://webhook.example.com/hook", [], reached_count=0)
+
+
+def test_send_price_drop_alert_posts_card():
+    mock_resp = Mock()
+    mock_resp.status_code = 202
+    mock_resp.raise_for_status = Mock()
+
+    deals = [
+        {"gtin": "111", "name": "Maybelline Concealer 15 Fair", "price": "1.50", "priceCurrency": "EUR", "targetPrice": "2.89", "availableQuantity": 100, "discount": 0.4811},
+        {"gtin": "222", "name": "Rimmel Mascara Volume", "price": "2.00", "priceCurrency": "EUR", "targetPrice": "3.91", "availableQuantity": 50, "discount": 0.4885},
+    ]
+
+    with patch("teams_notifier.requests.post", return_value=mock_resp) as mock_post:
+        send_price_drop_alert("https://webhook.example.com/hook", deals)
+
+    mock_post.assert_called_once()
+    payload = mock_post.call_args[1]["json"]
+    card = payload["attachments"][0]["content"]
+    card_str = str(card["body"])
+    assert "PRICE DROP" in card_str
+    assert "Maybelline" in card_str
+    assert "1.50" in card_str
+    assert "2.89" in card_str
+    assert "48%" in card_str
+
+
+def test_send_price_drop_alert_limits_to_10():
+    mock_resp = Mock()
+    mock_resp.status_code = 202
+    mock_resp.raise_for_status = Mock()
+
+    deals = [
+        {"gtin": str(i), "name": f"Product {i}", "price": "1.00", "priceCurrency": "EUR", "targetPrice": "10.00", "availableQuantity": 10, "discount": 0.90}
+        for i in range(15)
+    ]
+
+    with patch("teams_notifier.requests.post", return_value=mock_resp) as mock_post:
+        send_price_drop_alert("https://webhook.example.com/hook", deals)
+
+    payload = mock_post.call_args[1]["json"]
+    card = payload["attachments"][0]["content"]
+    card_str = str(card["body"])
+    assert "Product 9" in card_str
+    assert "Product 10" not in card_str

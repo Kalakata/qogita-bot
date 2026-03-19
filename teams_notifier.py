@@ -326,3 +326,98 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int, 
         )
 
     _post_card(webhook_url, card_body)
+
+
+def send_price_drop_alert(webhook_url: str, deals: list[dict]) -> None:
+    """Send a price drop alert card to Teams. Max 10 items shown."""
+    shown = deals[:10]
+
+    card_body = [
+        {
+            "type": "TextBlock",
+            "text": "PRICE DROP ALERT",
+            "weight": "Bolder",
+            "size": "Large",
+            "color": "Good",
+        },
+        {
+            "type": "TextBlock",
+            "text": f"**{len(deals)} items** 40%+ below target",
+            "spacing": "Small",
+        },
+    ]
+
+    for deal in shown:
+        discount_pct = f"-{deal['discount']:.0%}"
+        card_body.append(
+            {
+                "type": "ColumnSet",
+                "spacing": "Small",
+                "columns": [
+                    {
+                        "type": "Column",
+                        "width": "stretch",
+                        "items": [
+                            {
+                                "type": "TextBlock",
+                                "text": f"**{deal['name'][:40]}**",
+                                "spacing": "None",
+                                "wrap": True,
+                            }
+                        ],
+                    },
+                    {
+                        "type": "Column",
+                        "width": "80px",
+                        "items": [
+                            {
+                                "type": "TextBlock",
+                                "text": f"{deal['priceCurrency']} {deal['targetPrice']}",
+                                "spacing": "None",
+                                "isSubtle": True,
+                                "horizontalAlignment": "Right",
+                            }
+                        ],
+                    },
+                    {
+                        "type": "Column",
+                        "width": "80px",
+                        "items": [
+                            {
+                                "type": "TextBlock",
+                                "text": f"{deal['priceCurrency']} {deal['price']}",
+                                "spacing": "None",
+                                "weight": "Bolder",
+                                "horizontalAlignment": "Right",
+                            }
+                        ],
+                    },
+                    {
+                        "type": "Column",
+                        "width": "50px",
+                        "items": [
+                            {
+                                "type": "TextBlock",
+                                "text": discount_pct,
+                                "spacing": "None",
+                                "color": "Good",
+                                "weight": "Bolder",
+                                "horizontalAlignment": "Right",
+                            }
+                        ],
+                    },
+                ],
+            }
+        )
+
+    if len(deals) > 10:
+        card_body.append(
+            {
+                "type": "TextBlock",
+                "text": f"*...and {len(deals) - 10} more*",
+                "isSubtle": True,
+                "spacing": "Small",
+            }
+        )
+
+    _post_card(webhook_url, card_body)
