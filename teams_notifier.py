@@ -29,6 +29,17 @@ def _progress_bar(progress: float) -> str:
     return "\u2588" * filled + "\u2591" * (10 - filled)
 
 
+def _progress_color(prog: float) -> str:
+    """Color based on progress: green 100%+, warning 75%+, accent 50%+, default below."""
+    if prog >= 1.0:
+        return "Good"
+    if prog >= 0.75:
+        return "Warning"
+    if prog >= 0.50:
+        return "Accent"
+    return "Default"
+
+
 def send_notification(webhook_url: str, allocation: dict) -> None:
     """Send a Teams notification for an allocation that reached MOV."""
     fid = allocation["fid"]
@@ -116,14 +127,38 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int) 
     """Send a summary of all allocations to Teams."""
     total = len(allocations)
 
+    # Parse all allocations with valid progress
     valid = []
     for a in allocations:
         try:
-            valid.append((float(a.get("movProgress", "0")), a))
+            prog = float(a.get("movProgress", "0"))
+            valid.append((prog, a))
         except (ValueError, TypeError):
             continue
-    valid.sort(key=lambda x: x[0], reverse=True)
-    top5 = valid[:5]
+
+    # Compute stats
+    total_value = sum(float(a.get("subtotal", "0")) for _, a in valid)
+    avg_progress = sum(p for p, _ in valid) / len(valid) if valid else 0
+    currency = valid[0][1]["movCurrency"] if valid else "EUR"
+
+    # Split into reached and not-reached
+    not_reached = [(p, a) for p, a in valid if p < 1.0]
+    not_reached.sort(key=lambda x: x[0], reverse=True)
+    top5 = not_reached[:5]
+
+    # Cheapest to complete: smallest gap to MOV (excluding reached)
+    with_gap = []
+    for p, a in not_reached:
+        try:
+            gap = float(a["mov"]) - float(a["subtotal"])
+            if gap > 0:
+                with_gap.append((gap, p, a))
+        except (ValueError, TypeError):
+            continue
+    with_gap.sort(key=lambda x: x[0])
+    cheapest5 = with_gap[:5]
+
+    # --- Build card ---
 
     card_body = [
         {
@@ -164,8 +199,38 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int) 
                         },
                     ],
                 },
+                {
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                        {"type": "TextBlock", "text": "Total Value", "isSubtle": True},
+                        {
+                            "type": "TextBlock",
+                            "text": f"{currency} {total_value:,.2f}",
+                            "size": "ExtraLarge",
+                            "weight": "Bolder",
+                            "spacing": "None",
+                        },
+                    ],
+                },
+                {
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                        {"type": "TextBlock", "text": "Avg Progress", "isSubtle": True},
+                        {
+                            "type": "TextBlock",
+                            "text": f"{avg_progress:.0%}",
+                            "size": "ExtraLarge",
+                            "weight": "Bolder",
+                            "color": _progress_color(avg_progress),
+                            "spacing": "None",
+                        },
+                    ],
+                },
             ],
         },
+        # --- Top 5 closest ---
         {
             "type": "TextBlock",
             "text": "**Top 5 Closest to MOV:**",
@@ -175,7 +240,7 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int) 
     ]
 
     for prog, a in top5:
-        color = "Good" if prog >= 1.0 else "Warning" if prog >= 0.75 else "Default"
+        gap = float(a["mov"]) - float(a["subtotal"])
         card_body.append(
             {
                 "type": "ColumnSet",
@@ -200,7 +265,7 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int) 
                                 "type": "TextBlock",
                                 "text": f"{_progress_bar(prog)} {prog:.0%}",
                                 "spacing": "None",
-                                "color": color,
+                                "color": _progress_color(prog),
                             }
                         ],
                     },
@@ -210,9 +275,65 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int) 
                         "items": [
                             {
                                 "type": "TextBlock",
-                                "text": f"{a['movCurrency']} {a['subtotal']} / {a['mov']}",
+                                "text": f"needs {a['movCurrency']} {gap:,.2f}",
                                 "isSubtle": True,
                                 "spacing": "None",
+                            }
+                        ],
+                    },
+                ],
+            }
+        )
+
+    # --- Cheapest to complete ---
+    card_body.append(
+        {
+            "type": "TextBlock",
+            "text": "**Cheapest to Complete:**",
+            "weight": "Bolder",
+            "spacing": "Medium",
+        }
+    )
+
+    for gap, prog, a in cheapest5:
+        card_body.append(
+            {
+                "type": "ColumnSet",
+                "spacing": "Small",
+                "columns": [
+                    {
+                        "type": "Column",
+                        "width": "80px",
+                        "items": [
+                            {
+                                "type": "TextBlock",
+                                "text": f"**{a['fid']}**",
+                                "spacing": "None",
+                            }
+                        ],
+                    },
+                    {
+                        "type": "Column",
+                        "width": "stretch",
+                        "items": [
+                            {
+                                "type": "TextBlock",
+                                "text": f"{_progress_bar(prog)} {prog:.0%}",
+                                "spacing": "None",
+                                "color": _progress_color(prog),
+                            }
+                        ],
+                    },
+                    {
+                        "type": "Column",
+                        "width": "auto",
+                        "items": [
+                            {
+                                "type": "TextBlock",
+                                "text": f"needs {a['movCurrency']} {gap:,.2f}",
+                                "weight": "Bolder",
+                                "spacing": "None",
+                                "color": "Good",
                             }
                         ],
                     },
