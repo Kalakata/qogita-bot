@@ -20,7 +20,7 @@ def send_notification(webhook_url: str, allocation: dict) -> None:
                     "body": [
                         {
                             "type": "TextBlock",
-                            "text": f"Cart allocation **{fid}** has reached its MOV! ({currency} {mov})",
+                            "text": f"Cart **{fid}** has reached its MOV! ({currency} {mov})",
                             "wrap": True,
                         }
                     ],
@@ -52,7 +52,7 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int) 
         for prog, a in top5
     ]
 
-    text = f"**Cart Summary:** {total} allocations, {reached_count} reached MOV\n\n"
+    text = f"**Cart Summary:** {total} carts, {reached_count} reached MOV\n\n"
     text += "**Top 5 closest:**\n" + "\n".join(top_lines)
 
     payload = {

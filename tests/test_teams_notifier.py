@@ -69,7 +69,7 @@ def test_send_summary_posts_top_5():
     payload = mock_post.call_args[1]["json"]
     card = payload["attachments"][0]["content"]
     text = card["body"][0]["text"]
-    assert "3 allocations" in text
+    assert "3 carts" in text
     assert "0 reached MOV" in text
     assert "A1" in text
     assert "B2" in text
