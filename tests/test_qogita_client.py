@@ -168,9 +168,9 @@ def test_get_allocations_raises_rate_limit_error_on_429():
 
 
 def test_get_supplier_watchlist_items_parses_csv():
-    csv_content = "gtin,name,price,priceCurrency,targetPrice,availableQuantity,fid,slug\n"
-    csv_content += '111,Product A,3.00,EUR,10.00,100,fid-a,product-a\n'
-    csv_content += '222,Product B,8.00,EUR,10.00,50,fid-b,product-b\n'
+    csv_content = '"GTIN","Name","Category","Brand","\u20ac Price inc. shipping","Unit","Inventory","Is a pre-order?","Estimated Delivery Time (weeks)","Product URL","Image URL"\n'
+    csv_content += '"111","Product A","Cat","Brand","3.00","1","100","No","","https://www.qogita.com/products/fid-a/product-a/","https://img"\n'
+    csv_content += '"222","Product B","Cat","Brand","8.00","1","50","No","","https://www.qogita.com/products/fid-b/product-b/","https://img"\n'
 
     mock_resp = Mock()
     mock_resp.ok = True
@@ -181,15 +181,15 @@ def test_get_supplier_watchlist_items_parses_csv():
         items = get_supplier_watchlist_items("tok123", "alloc-qid-1")
 
     assert len(items) == 2
-    # Sorted by discount descending — Product A (70% off) should be first
+    # Sorted by price ascending
     assert items[0]["gtin"] == "111"
     assert items[0]["name"] == "Product A"
     assert items[0]["price"] == "3.00"
     assert items[0]["fid"] == "fid-a"
     assert items[0]["slug"] == "product-a"
-    assert abs(items[0]["discount"] - 0.70) < 0.01
+    assert items[0]["availableQuantity"] == 100
     assert items[1]["gtin"] == "222"
-    assert abs(items[1]["discount"] - 0.20) < 0.01
+    assert items[1]["price"] == "8.00"
 
 
 def test_get_supplier_watchlist_items_returns_empty_on_error():

@@ -86,18 +86,14 @@ def get_supplier_watchlist_items(token: str, allocation_qid: str) -> list[dict]:
         logger.warning("Search endpoint returned %s for allocation %s", resp.status_code, allocation_qid)
         return []
 
-    # DEBUG: log raw response details
-    lines = resp.text.strip().split("\n")
-    logger.info("  CSV response: %d lines, headers: %s", len(lines), lines[0][:200] if lines else "(empty)")
-    if len(lines) > 1:
-        logger.info("  First data row: %s", lines[1][:200])
-
     try:
-        reader = csv.DictReader(io.StringIO(resp.text))
+        # Normalize headers: lowercase, strip non-ASCII prefixes (currency symbols)
+        raw_reader = csv.DictReader(io.StringIO(resp.text))
         items = []
-        for row in reader:
-            price = row.get("price") or row.get("Price") or row.get("unit_price")
-            target = row.get("targetPrice") or row.get("target_price") or row.get("Target Price")
+        for raw_row in raw_reader:
+            row = {k.encode("ascii", "ignore").decode().lower().strip(): v for k, v in raw_row.items()}
+
+            price = row.get("price inc. shipping") or row.get("price") or row.get("unit_price")
             if not price:
                 continue
             try:
@@ -105,28 +101,32 @@ def get_supplier_watchlist_items(token: str, allocation_qid: str) -> list[dict]:
             except (ValueError, TypeError):
                 continue
 
-            discount = 0.0
-            if target:
-                try:
-                    target_f = float(target)
-                    if target_f > 0:
-                        discount = max(0.0, round(1 - (price_f / target_f), 4))
-                except (ValueError, TypeError):
-                    pass
+            # Extract fid and slug from Product URL if available
+            # URL format: https://www.qogita.com/products/{fid}/{slug}/
+            fid, slug = "", ""
+            product_url = row.get("product url") or ""
+            if "/products/" in product_url:
+                parts = product_url.rstrip("/").split("/products/")[-1].split("/")
+                if len(parts) >= 2:
+                    fid, slug = parts[0], parts[1]
 
-            gtin = row.get("gtin") or row.get("GTIN") or row.get("ean") or ""
+            try:
+                qty = int(row.get("inventory") or row.get("available_quantity") or row.get("availablequantity") or 0)
+            except (ValueError, TypeError):
+                qty = 0
+
             items.append({
-                "gtin": gtin,
-                "name": row.get("name") or row.get("Name") or row.get("title") or "",
-                "fid": row.get("fid") or row.get("FID") or "",
-                "slug": row.get("slug") or row.get("Slug") or "",
+                "gtin": row.get("gtin") or row.get("ean") or "",
+                "name": row.get("name") or "",
+                "fid": fid,
+                "slug": slug,
                 "price": price,
-                "priceCurrency": row.get("priceCurrency") or row.get("currency") or row.get("Currency") or "EUR",
-                "availableQuantity": int(row.get("availableQuantity") or row.get("available_quantity") or row.get("Available Quantity") or 0),
-                "discount": discount,
+                "priceCurrency": "EUR",
+                "availableQuantity": qty,
+                "discount": 0.0,  # No target price in CSV, discount computed later if needed
             })
 
-        items.sort(key=lambda d: d["discount"], reverse=True)
+        items.sort(key=lambda d: d["price"])
         return items
     except Exception:
         logger.exception("Failed to parse CSV for allocation %s", allocation_qid)
