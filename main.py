@@ -3,6 +3,7 @@ import logging
 import os
 import subprocess
 import sys
+import time
 from qogita_client import login, get_allocations, get_supplier_watchlist_items, RateLimitError
 from teams_notifier import send_summary, send_cart_fill_suggestions
 from state import load_state, save_state
@@ -57,6 +58,20 @@ def _commit_and_push(*paths: str) -> bool:
         return False
 
 
+def _fetch_with_retry(token: str, allocation_qid: str, max_retries: int = 3) -> list[dict]:
+    """Fetch supplier watchlist items with retry on rate limit."""
+    for attempt in range(max_retries):
+        try:
+            return get_supplier_watchlist_items(token, allocation_qid)
+        except RateLimitError as e:
+            wait = int(e.retry_after or 60)
+            if attempt < max_retries - 1:
+                logger.info("Rate limited, waiting %ds before retry (%d/%d)", wait, attempt + 1, max_retries)
+                time.sleep(wait)
+            else:
+                raise
+
+
 def _get_cart_fill_suggestions(token: str, allocations: list[dict]) -> list[dict]:
     """Find watchlist items that can fill unfilled allocations.
 
@@ -82,10 +97,10 @@ def _get_cart_fill_suggestions(token: str, allocations: list[dict]) -> list[dict
     suggestions = []
     for gap, alloc in top:
         try:
-            items = get_supplier_watchlist_items(token, alloc["qid"])
+            items = _fetch_with_retry(token, alloc["qid"])
             logger.info("  Allocation %s (gap %.2f): %d watchlist items", alloc["fid"], gap, len(items))
         except RateLimitError:
-            logger.warning("Rate limited during cart fill check. Stopping.")
+            logger.warning("Rate limited during cart fill check (retries exhausted). Stopping.")
             break
 
         if not items:
