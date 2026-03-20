@@ -155,7 +155,7 @@ def test_run_does_not_save_fid_when_notification_fails(tmp_path):
 def test_run_sends_cart_fill_on_60th_run(tmp_path):
     state_path = str(tmp_path / "state.json")
     with open(state_path, "w") as f:
-        json.dump({"cart_qid": "cart-1", "notified": [], "run_count": 59}, f)
+        json.dump({"cart_qid": "cart-1", "notified": [], "run_count": 11}, f)
 
     allocations = [
         {"qid": "alloc-1", "fid": "X1", "movProgress": "0.50", "mov": "500.00", "movCurrency": "EUR", "subtotal": "250.00"},
@@ -193,7 +193,7 @@ def test_run_sends_cart_fill_on_60th_run(tmp_path):
 
     with open(state_path) as f:
         state = json.load(f)
-    assert state["run_count"] == 60
+    assert state["run_count"] == 12
 
 
 def test_run_skips_cart_fill_on_non_60th_run(tmp_path):

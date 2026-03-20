@@ -194,7 +194,7 @@ def run(email: str, password: str, webhook_url: str, state_path: str = STATE_PAT
     # Save state immediately so the updated run_count is on disk
     save_state(state_path, state)
 
-    if run_count % 60 == 0:
+    if run_count % 12 == 0:
         # Commit+push state BEFORE sending notifications to prevent duplicate
         # alerts caused by race conditions between consecutive workflow runs
         _commit_and_push(state_path)
