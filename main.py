@@ -74,6 +74,8 @@ def _get_cart_fill_suggestions(token: str, allocations: list[dict]) -> list[dict
         except (ValueError, TypeError):
             continue
 
+    logger.info("Cart fill: %d allocations, %d unfilled (with qid)", len(allocations), len(unfilled))
+
     unfilled.sort(key=lambda x: x[0])
     top = unfilled[:MAX_ALLOCATIONS]
 
@@ -81,6 +83,7 @@ def _get_cart_fill_suggestions(token: str, allocations: list[dict]) -> list[dict
     for gap, alloc in top:
         try:
             items = get_supplier_watchlist_items(token, alloc["qid"])
+            logger.info("  Allocation %s (gap %.2f): %d watchlist items", alloc["fid"], gap, len(items))
         except RateLimitError:
             logger.warning("Rate limited during cart fill check. Stopping.")
             break
