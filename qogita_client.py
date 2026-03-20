@@ -86,6 +86,12 @@ def get_supplier_watchlist_items(token: str, allocation_qid: str) -> list[dict]:
         logger.warning("Search endpoint returned %s for allocation %s", resp.status_code, allocation_qid)
         return []
 
+    # DEBUG: log raw response details
+    lines = resp.text.strip().split("\n")
+    logger.info("  CSV response: %d lines, headers: %s", len(lines), lines[0][:200] if lines else "(empty)")
+    if len(lines) > 1:
+        logger.info("  First data row: %s", lines[1][:200])
+
     try:
         reader = csv.DictReader(io.StringIO(resp.text))
         items = []
