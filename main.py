@@ -58,21 +58,29 @@ def _commit_and_push(*paths: str) -> bool:
         return False
 
 
-def _fetch_with_retry(token: str, allocation_qid: str, max_retries: int = 3) -> list[dict]:
-    """Fetch supplier watchlist items with retry on rate limit."""
+def _fetch_with_retry(email: str, password: str, token: str, allocation_qid: str, max_retries: int = 3) -> tuple[str, list[dict]]:
+    """Fetch supplier watchlist items with retry on rate limit.
+
+    Returns (token, items) — token may be refreshed if rate limit wait is long.
+    """
     for attempt in range(max_retries):
         try:
-            return get_supplier_watchlist_items(token, allocation_qid)
+            return token, get_supplier_watchlist_items(token, allocation_qid)
         except RateLimitError as e:
             wait = int(e.retry_after or 60)
             if attempt < max_retries - 1:
                 logger.info("Rate limited, waiting %ds before retry (%d/%d)", wait, attempt + 1, max_retries)
                 time.sleep(wait)
+                # Re-authenticate if wait was long (token may have expired)
+                if wait > 60:
+                    token, _ = login(email, password)
+                    logger.info("Re-authenticated after long rate limit wait")
             else:
                 raise
+    return token, []
 
 
-def _get_cart_fill_suggestions(token: str, allocations: list[dict]) -> list[dict]:
+def _get_cart_fill_suggestions(email: str, password: str, token: str, allocations: list[dict]) -> list[dict]:
     """Find watchlist items that can fill unfilled allocations.
 
     Returns list of dicts: {allocation: {..., gap}, items: [...]}
@@ -97,7 +105,7 @@ def _get_cart_fill_suggestions(token: str, allocations: list[dict]) -> list[dict
     suggestions = []
     for gap, alloc in top:
         try:
-            items = _fetch_with_retry(token, alloc["qid"])
+            token, items = _fetch_with_retry(email, password, token, alloc["qid"])
             logger.info("  Allocation %s (gap %.2f): %d watchlist items", alloc["fid"], gap, len(items))
         except RateLimitError:
             logger.warning("Rate limited during cart fill check (retries exhausted). Stopping.")
@@ -173,7 +181,7 @@ def run(email: str, password: str, webhook_url: str, state_path: str = STATE_PAT
         _commit_and_push(state_path)
 
         try:
-            suggestions = _get_cart_fill_suggestions(token, allocations)
+            suggestions = _get_cart_fill_suggestions(email, password, token, allocations)
             if suggestions:
                 csv_url = write_deals_csv(suggestions)
                 send_cart_fill_suggestions(webhook_url, suggestions, full_list_url=csv_url)
