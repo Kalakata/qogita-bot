@@ -39,7 +39,8 @@ jobs:
 
       - name: Commit state changes
         run: |
-          git add state.json deals.csv
+          git add state.json
+          git add deals.csv 2>/dev/null || true
           git diff --cached --quiet || git commit -m "Update MOV notification state"
           git pull --rebase
           git push
