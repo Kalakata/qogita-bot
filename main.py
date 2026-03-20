@@ -29,7 +29,7 @@ def write_deals_csv(suggestions: list[dict], path: str = DEALS_CSV) -> str | Non
                     f"{alloc['gap']:.2f}",
                     item["gtin"], item["name"], item["price"],
                     item["priceCurrency"],
-                    f"{item['discount']:.0%}" if item.get("discount") else "",
+                    f"{item['discount']:.0%}" if item.get("discount") is not None else "",
                     item["availableQuantity"],
                 ])
 

@@ -329,20 +329,22 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int, 
 
 
 def _item_row(item: dict) -> dict:
-    """Build a single suggested-item row for the cart fill card."""
-    gtin = item["gtin"]
+    """Build a single suggested-item row for the cart fill card (Layout B)."""
     fid = item.get("fid", "")
     slug = item.get("slug", "")
+    name = item["name"][:40]
     if fid and slug:
-        gtin_text = f"[{gtin}](https://www.qogita.com/products/{fid}/{slug}/)"
+        url = f"https://www.qogita.com/products/{fid}/{slug}/"
+        name_text = f"[{name}]({url})"
     else:
-        gtin_text = gtin
+        url = ""
+        name_text = name
 
-    discount_pct = f"-{item['discount']:.0%}" if item.get("discount") else ""
+    discount_pct = f"-{item['discount']:.0%}" if item.get("discount") is not None else ""
 
-    return {
+    row = {
         "type": "ColumnSet",
-        "spacing": "Small",
+        "spacing": "None",
         "columns": [
             {
                 "type": "Column",
@@ -350,48 +352,31 @@ def _item_row(item: dict) -> dict:
                 "items": [
                     {
                         "type": "TextBlock",
-                        "text": f"**{item['name'][:40]}**",
+                        "text": name_text,
                         "spacing": "None",
                         "wrap": True,
-                    },
-                    {
-                        "type": "TextBlock",
-                        "text": gtin_text,
-                        "spacing": "None",
-                        "isSubtle": True,
                         "size": "Small",
                     },
                 ],
             },
             {
                 "type": "Column",
-                "width": "80px",
+                "width": "auto",
                 "items": [
                     {
                         "type": "TextBlock",
-                        "text": f"{item['priceCurrency']} {item['price']}",
+                        "text": f"**{item['price']}** {discount_pct}",
                         "spacing": "None",
-                        "weight": "Bolder",
-                        "horizontalAlignment": "Right",
-                    }
-                ],
-            },
-            {
-                "type": "Column",
-                "width": "50px",
-                "items": [
-                    {
-                        "type": "TextBlock",
-                        "text": discount_pct,
-                        "spacing": "None",
+                        "size": "Small",
                         "color": "Good",
-                        "weight": "Bolder",
-                        "horizontalAlignment": "Right",
                     }
                 ],
             },
         ],
     }
+    if url:
+        row["selectAction"] = {"type": "Action.OpenUrl", "url": url}
+    return row
 
 
 def send_cart_fill_suggestions(
@@ -417,7 +402,7 @@ def send_cart_fill_suggestions(
         },
         {
             "type": "TextBlock",
-            "text": f"**{len(suggestions)} allocations** need items \u00b7 {total_items} suggestions",
+            "text": f"{total_items} watchlisted items across {len(suggestions)} allocations",
             "spacing": "Small",
         },
     ]
@@ -431,17 +416,19 @@ def send_cart_fill_suggestions(
         card_body.append(
             {
                 "type": "TextBlock",
-                "text": f"**{alloc['fid']}** \u00b7 {currency} {alloc['subtotal']} / {alloc['mov']} MOV",
+                "text": f"**{alloc['fid']}** \u2014 Gap: **{currency} {alloc['gap']:,.2f}**",
                 "spacing": "Medium",
                 "separator": True,
+                "color": "Attention",
             }
         )
         card_body.append(
             {
                 "type": "TextBlock",
-                "text": f"Gap: **{currency} {alloc['gap']:,.2f}**",
+                "text": f"{currency} {alloc['subtotal']} / {alloc['mov']} MOV",
                 "spacing": "None",
-                "color": "Attention",
+                "isSubtle": True,
+                "size": "Small",
             }
         )
 
@@ -453,9 +440,10 @@ def send_cart_fill_suggestions(
             card_body.append(
                 {
                     "type": "TextBlock",
-                    "text": f"*...and {len(items) - 3} more from this supplier*",
+                    "text": f"*+{len(items) - 3} more*",
                     "isSubtle": True,
-                    "spacing": "Small",
+                    "spacing": "None",
+                    "size": "Small",
                 }
             )
 
