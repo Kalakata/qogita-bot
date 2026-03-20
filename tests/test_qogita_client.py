@@ -1,7 +1,7 @@
 from unittest.mock import patch, Mock
 from qogita_client import login
 from qogita_client import get_allocations
-from qogita_client import get_supplier_watchlist_items
+from qogita_client import get_supplier_catalog
 import requests as real_requests
 import pytest
 from qogita_client import RateLimitError
@@ -167,7 +167,7 @@ def test_get_allocations_raises_rate_limit_error_on_429():
     assert exc_info.value.retry_after == "60"
 
 
-def test_get_supplier_watchlist_items_parses_csv():
+def test_get_supplier_catalog_parses_csv():
     csv_content = '"GTIN","Name","Category","Brand","\u20ac Price inc. shipping","Unit","Inventory","Is a pre-order?","Estimated Delivery Time (weeks)","Product URL","Image URL"\n'
     csv_content += '"111","Product A","Cat","Brand","3.00","1","100","No","","https://www.qogita.com/products/fid-a/product-a/","https://img"\n'
     csv_content += '"222","Product B","Cat","Brand","8.00","1","50","No","","https://www.qogita.com/products/fid-b/product-b/","https://img"\n'
@@ -178,7 +178,7 @@ def test_get_supplier_watchlist_items_parses_csv():
     mock_resp.text = csv_content
 
     with patch("qogita_client.requests.get", return_value=mock_resp):
-        items = get_supplier_watchlist_items("tok123", "alloc-qid-1")
+        items = get_supplier_catalog("tok123", "alloc-qid-1")
 
     assert len(items) == 2
     # Sorted by price ascending
@@ -192,18 +192,18 @@ def test_get_supplier_watchlist_items_parses_csv():
     assert items[1]["price"] == "8.00"
 
 
-def test_get_supplier_watchlist_items_returns_empty_on_error():
+def test_get_supplier_catalog_returns_empty_on_error():
     mock_resp = Mock()
     mock_resp.ok = False
     mock_resp.status_code = 500
 
     with patch("qogita_client.requests.get", return_value=mock_resp):
-        items = get_supplier_watchlist_items("tok123", "alloc-qid-1")
+        items = get_supplier_catalog("tok123", "alloc-qid-1")
 
     assert items == []
 
 
-def test_get_supplier_watchlist_items_raises_on_429():
+def test_get_supplier_catalog_raises_on_429():
     mock_resp = Mock()
     mock_resp.ok = False
     mock_resp.status_code = 429
@@ -211,4 +211,4 @@ def test_get_supplier_watchlist_items_raises_on_429():
 
     with patch("qogita_client.requests.get", return_value=mock_resp):
         with pytest.raises(RateLimitError):
-            get_supplier_watchlist_items("tok123", "alloc-qid-1")
+            get_supplier_catalog("tok123", "alloc-qid-1")

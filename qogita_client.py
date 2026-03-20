@@ -65,11 +65,44 @@ def get_allocations(token: str, cart_qid: str) -> list[dict]:
     return allocations
 
 
-def get_supplier_watchlist_items(token: str, allocation_qid: str) -> list[dict]:
-    """Fetch watchlist items available from the same supplier as the given allocation.
+def get_watchlist_gtins(token: str) -> dict[str, dict]:
+    """Fetch all watchlist GTINs with their target prices. Returns {gtin: {targetPrice, ...}}."""
+    headers = {"Authorization": f"Bearer {token}"}
+    gtins = {}
+    page = 1
+
+    while True:
+        resp = requests.get(
+            f"{API_URL}/watchlist/items/",
+            headers=headers,
+            params={"page": page, "size": 50},
+        )
+        if resp.status_code == 429:
+            raise RateLimitError(retry_after=resp.headers.get("Retry-After"))
+        resp.raise_for_status()
+        data = resp.json()
+        results = data.get("results", [])
+        if not results:
+            break
+
+        for item in results:
+            gtins[item["gtin"]] = {
+                "targetPrice": item.get("targetPrice"),
+                "targetPriceCurrency": item.get("targetPriceCurrency", "EUR"),
+            }
+
+        if not data.get("next"):
+            break
+        page += 1
+
+    return gtins
+
+
+def get_supplier_catalog(token: str, allocation_qid: str) -> list[dict]:
+    """Fetch products available from the same supplier as the given allocation.
 
     Calls the CSV search/download endpoint filtered by allocation QID.
-    Returns list of item dicts sorted by discount descending.
+    Returns list of item dicts sorted by price ascending.
     """
     headers = {"Authorization": f"Bearer {token}"}
     resp = requests.get(
@@ -77,7 +110,6 @@ def get_supplier_watchlist_items(token: str, allocation_qid: str) -> list[dict]:
         headers=headers,
         params={
             "cart_allocation_qid": allocation_qid,
-            "show_watchlisted_only": "true",
         },
     )
     if resp.status_code == 429:

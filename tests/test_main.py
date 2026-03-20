@@ -160,13 +160,16 @@ def test_run_sends_cart_fill_on_60th_run(tmp_path):
     allocations = [
         {"qid": "alloc-1", "fid": "X1", "movProgress": "0.50", "mov": "500.00", "movCurrency": "EUR", "subtotal": "250.00"},
     ]
-    supplier_items = [
-        {"gtin": "111", "name": "Deal", "price": "3.00", "priceCurrency": "EUR", "availableQuantity": 10, "discount": 0.70, "fid": "p1", "slug": "deal"},
+    catalog_items = [
+        {"gtin": "111", "name": "Deal", "price": "3.00", "priceCurrency": "EUR", "availableQuantity": 10, "discount": 0.0, "fid": "p1", "slug": "deal"},
+        {"gtin": "999", "name": "Not Watchlisted", "price": "5.00", "priceCurrency": "EUR", "availableQuantity": 5, "discount": 0.0, "fid": "p2", "slug": "nope"},
     ]
+    watchlist_gtins = {"111": {"targetPrice": "10.00"}}
 
     with patch("main.login", return_value=("tok", "cart-1")), \
          patch("main.get_allocations", return_value=allocations), \
-         patch("main.get_supplier_watchlist_items", return_value=supplier_items) as mock_items, \
+         patch("main.get_watchlist_gtins", return_value=watchlist_gtins), \
+         patch("main.get_supplier_catalog", return_value=catalog_items) as mock_catalog, \
          patch("main.send_summary"), \
          patch("main.send_cart_fill_suggestions") as mock_fill, \
          patch("main._commit_and_push"):
@@ -177,13 +180,16 @@ def test_run_sends_cart_fill_on_60th_run(tmp_path):
             state_path=state_path,
         )
 
-    mock_items.assert_called_once_with("tok", "alloc-1")
+    mock_catalog.assert_called_once_with("tok", "alloc-1")
     mock_fill.assert_called_once()
     suggestions = mock_fill.call_args[0][1]
     assert len(suggestions) == 1
     assert suggestions[0]["allocation"]["fid"] == "X1"
     assert abs(suggestions[0]["allocation"]["gap"] - 250.0) < 0.01
-    assert suggestions[0]["items"] == supplier_items
+    # Only watchlisted item should be included
+    assert len(suggestions[0]["items"]) == 1
+    assert suggestions[0]["items"][0]["gtin"] == "111"
+    assert abs(suggestions[0]["items"][0]["discount"] - 0.70) < 0.01
 
     with open(state_path) as f:
         state = json.load(f)
@@ -201,7 +207,7 @@ def test_run_skips_cart_fill_on_non_60th_run(tmp_path):
 
     with patch("main.login", return_value=("tok", "cart-1")), \
          patch("main.get_allocations", return_value=allocations), \
-         patch("main.get_supplier_watchlist_items") as mock_items, \
+         patch("main.get_supplier_catalog") as mock_catalog, \
          patch("main.send_summary"), \
          patch("main.send_cart_fill_suggestions") as mock_fill:
         run(
@@ -211,7 +217,7 @@ def test_run_skips_cart_fill_on_non_60th_run(tmp_path):
             state_path=state_path,
         )
 
-    mock_items.assert_not_called()
+    mock_catalog.assert_not_called()
     mock_fill.assert_not_called()
 
     with open(state_path) as f:

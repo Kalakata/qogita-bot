@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 import time
-from qogita_client import login, get_allocations, get_supplier_watchlist_items, RateLimitError
+from qogita_client import login, get_allocations, get_watchlist_gtins, get_supplier_catalog, RateLimitError
 from teams_notifier import send_summary, send_cart_fill_suggestions
 from state import load_state, save_state
 
@@ -59,13 +59,13 @@ def _commit_and_push(*paths: str) -> bool:
 
 
 def _fetch_with_retry(email: str, password: str, token: str, allocation_qid: str, max_retries: int = 3) -> tuple[str, list[dict]]:
-    """Fetch supplier watchlist items with retry on rate limit.
+    """Fetch supplier catalog with retry on rate limit.
 
     Returns (token, items) — token may be refreshed if rate limit wait is long.
     """
     for attempt in range(max_retries):
         try:
-            return token, get_supplier_watchlist_items(token, allocation_qid)
+            return token, get_supplier_catalog(token, allocation_qid)
         except RateLimitError as e:
             wait = int(e.retry_after or 60)
             if attempt < max_retries - 1:
@@ -80,7 +80,7 @@ def _fetch_with_retry(email: str, password: str, token: str, allocation_qid: str
     return token, []
 
 
-def _get_cart_fill_suggestions(email: str, password: str, token: str, allocations: list[dict]) -> list[dict]:
+def _get_cart_fill_suggestions(email: str, password: str, token: str, allocations: list[dict], watchlist_gtins: dict[str, dict]) -> list[dict]:
     """Find watchlist items that can fill unfilled allocations.
 
     Returns list of dicts: {allocation: {..., gap}, items: [...]}
@@ -105,11 +105,30 @@ def _get_cart_fill_suggestions(email: str, password: str, token: str, allocation
     suggestions = []
     for gap, alloc in top:
         try:
-            token, items = _fetch_with_retry(email, password, token, alloc["qid"])
-            logger.info("  Allocation %s (gap %.2f): %d watchlist items", alloc["fid"], gap, len(items))
+            token, catalog = _fetch_with_retry(email, password, token, alloc["qid"])
         except RateLimitError:
             logger.warning("Rate limited during cart fill check (retries exhausted). Stopping.")
             break
+
+        # Filter to only watchlisted items and compute discount from target price
+        items = []
+        for item in catalog:
+            wl = watchlist_gtins.get(item["gtin"])
+            if not wl:
+                continue
+            target = wl.get("targetPrice")
+            if target:
+                try:
+                    target_f = float(target)
+                    price_f = float(item["price"])
+                    if target_f > 0:
+                        item["discount"] = max(0.0, round(1 - (price_f / target_f), 4))
+                except (ValueError, TypeError):
+                    pass
+            items.append(item)
+
+        items.sort(key=lambda d: d["discount"], reverse=True)
+        logger.info("  Allocation %s (gap %.2f): %d catalog / %d watchlisted", alloc["fid"], gap, len(catalog), len(items))
 
         if not items:
             continue
@@ -181,7 +200,9 @@ def run(email: str, password: str, webhook_url: str, state_path: str = STATE_PAT
         _commit_and_push(state_path)
 
         try:
-            suggestions = _get_cart_fill_suggestions(email, password, token, allocations)
+            watchlist_gtins = get_watchlist_gtins(token)
+            logger.info("Fetched %d watchlist GTINs", len(watchlist_gtins))
+            suggestions = _get_cart_fill_suggestions(email, password, token, allocations, watchlist_gtins)
             if suggestions:
                 csv_url = write_deals_csv(suggestions)
                 send_cart_fill_suggestions(webhook_url, suggestions, full_list_url=csv_url)
