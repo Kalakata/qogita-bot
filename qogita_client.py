@@ -66,16 +66,20 @@ def get_allocations(token: str, cart_qid: str) -> list[dict]:
 
 
 def get_watchlist_gtins(token: str) -> dict[str, dict]:
-    """Fetch all watchlist GTINs with their target prices. Returns {gtin: {targetPrice, ...}}."""
+    """Fetch all watchlist GTINs with their target prices. Returns {gtin: {targetPrice, ...}}.
+
+    Uses the XLSX/CSV download to get all items in one request instead of paginating.
+    Falls back to paginated JSON if download fails.
+    """
     headers = {"Authorization": f"Bearer {token}"}
+
     gtins = {}
     page = 1
-
     while True:
         resp = requests.get(
             f"{API_URL}/watchlist/items/",
             headers=headers,
-            params={"page": page, "size": 50},
+            params={"page": page, "size": 200},
         )
         if resp.status_code == 429:
             raise RateLimitError(retry_after=resp.headers.get("Retry-After"))

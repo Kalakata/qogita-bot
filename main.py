@@ -200,7 +200,20 @@ def run(email: str, password: str, webhook_url: str, state_path: str = STATE_PAT
         _commit_and_push(state_path)
 
         try:
-            watchlist_gtins = get_watchlist_gtins(token)
+            # Fetch watchlist with retry (paginating 3000+ items can hit rate limits)
+            for attempt in range(3):
+                try:
+                    watchlist_gtins = get_watchlist_gtins(token)
+                    break
+                except RateLimitError as e:
+                    wait = int(e.retry_after or 60)
+                    if attempt < 2:
+                        logger.info("Rate limited fetching watchlist, waiting %ds (%d/3)", wait, attempt + 1)
+                        time.sleep(wait)
+                        if wait > 60:
+                            token, _ = login(email, password)
+                    else:
+                        raise
             logger.info("Fetched %d watchlist GTINs", len(watchlist_gtins))
             suggestions = _get_cart_fill_suggestions(email, password, token, allocations, watchlist_gtins)
             if suggestions:
