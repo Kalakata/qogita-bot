@@ -26,18 +26,20 @@ jobs:
 
       - run: pip install -r requirements.txt
 
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
       - run: python main.py
         env:
           QOGITA_EMAIL: ${{ secrets.QOGITA_EMAIL }}
           QOGITA_PASSWORD: ${{ secrets.QOGITA_PASSWORD }}
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
-          GIST_ID: ${{ secrets.GIST_ID }}
 
       - name: Commit state changes
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add state.json
+          git add state.json deals.csv
           git diff --cached --quiet || git commit -m "Update MOV notification state"
           git pull --rebase
           git push

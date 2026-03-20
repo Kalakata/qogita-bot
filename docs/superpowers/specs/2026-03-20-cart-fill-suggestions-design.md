@@ -85,7 +85,7 @@ View full list (deals.csv)
 allocation_fid, mov, subtotal, gap, gtin, name, price, currency, discount, available_qty
 ```
 
-Each row is one suggested item, grouped by allocation. This gives the full picture across all allocations (not just top 5) and all items (not just top 3 per allocation).
+Each row is one suggested item, grouped by allocation. The CSV includes all items per allocation (not just the top 3 shown in the card), but is limited to the same top 5 allocations due to API rate limits.
 
 ## Rate Limit Strategy
 

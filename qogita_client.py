@@ -1,6 +1,11 @@
+import csv
+import io
+import logging
 import requests
 
 API_URL = "https://api.qogita.com"
+
+logger = logging.getLogger(__name__)
 
 
 class RateLimitError(Exception):
@@ -45,6 +50,7 @@ def get_allocations(token: str, cart_qid: str) -> list[dict]:
 
         for a in results:
             allocations.append({
+                "qid": a.get("qid", ""),
                 "fid": a["fid"],
                 "movProgress": a["movProgress"],
                 "mov": a["mov"],
@@ -59,55 +65,63 @@ def get_allocations(token: str, cart_qid: str) -> list[dict]:
     return allocations
 
 
-def get_watchlist_deals(token: str, min_discount: float = 0.0) -> list[dict]:
-    """Fetch watchlist items with price at least min_discount below target."""
+def get_supplier_watchlist_items(token: str, allocation_qid: str) -> list[dict]:
+    """Fetch watchlist items available from the same supplier as the given allocation.
+
+    Calls the CSV search/download endpoint filtered by allocation QID.
+    Returns list of item dicts sorted by discount descending.
+    """
     headers = {"Authorization": f"Bearer {token}"}
-    deals = []
-    page = 1
+    resp = requests.get(
+        f"{API_URL}/variants/search/download/",
+        headers=headers,
+        params={
+            "cart_allocation_qid": allocation_qid,
+            "show_watchlisted_only": "true",
+        },
+    )
+    if resp.status_code == 429:
+        raise RateLimitError(retry_after=resp.headers.get("Retry-After"))
+    if not resp.ok:
+        logger.warning("Search endpoint returned %s for allocation %s", resp.status_code, allocation_qid)
+        return []
 
-    while True:
-        resp = requests.get(
-            f"{API_URL}/watchlist/items/",
-            headers=headers,
-            params={"page": page, "size": 50, "is_available": "true", "are_targets_met": "true"},
-        )
-        if resp.status_code == 429:
-            raise RateLimitError(retry_after=resp.headers.get("Retry-After"))
-        resp.raise_for_status()
-        data = resp.json()
-        results = data.get("results", [])
-        if not results:
-            break
-
-        for item in results:
-            price = item.get("price")
-            target = item.get("targetPrice")
-            if price is None or target is None:
+    try:
+        reader = csv.DictReader(io.StringIO(resp.text))
+        items = []
+        for row in reader:
+            price = row.get("price") or row.get("Price") or row.get("unit_price")
+            target = row.get("targetPrice") or row.get("target_price") or row.get("Target Price")
+            if not price:
                 continue
             try:
                 price_f = float(price)
-                target_f = float(target)
-                if target_f <= 0:
-                    continue
-                discount = 1 - (price_f / target_f)
-                if discount >= min_discount:
-                    deals.append({
-                        "gtin": item["gtin"],
-                        "name": item["name"],
-                        "fid": item.get("fid", ""),
-                        "slug": item.get("slug", ""),
-                        "price": price,
-                        "priceCurrency": item["priceCurrency"],
-                        "targetPrice": target,
-                        "availableQuantity": item["availableQuantity"],
-                        "discount": round(discount, 4),
-                    })
             except (ValueError, TypeError):
                 continue
 
-        if not data.get("next"):
-            break
-        page += 1
+            discount = 0.0
+            if target:
+                try:
+                    target_f = float(target)
+                    if target_f > 0:
+                        discount = max(0.0, round(1 - (price_f / target_f), 4))
+                except (ValueError, TypeError):
+                    pass
 
-    deals.sort(key=lambda d: d["discount"], reverse=True)
-    return deals
+            gtin = row.get("gtin") or row.get("GTIN") or row.get("ean") or ""
+            items.append({
+                "gtin": gtin,
+                "name": row.get("name") or row.get("Name") or row.get("title") or "",
+                "fid": row.get("fid") or row.get("FID") or "",
+                "slug": row.get("slug") or row.get("Slug") or "",
+                "price": price,
+                "priceCurrency": row.get("priceCurrency") or row.get("currency") or row.get("Currency") or "EUR",
+                "availableQuantity": int(row.get("availableQuantity") or row.get("available_quantity") or row.get("Available Quantity") or 0),
+                "discount": discount,
+            })
+
+        items.sort(key=lambda d: d["discount"], reverse=True)
+        return items
+    except Exception:
+        logger.exception("Failed to parse CSV for allocation %s", allocation_qid)
+        return []

@@ -328,105 +328,144 @@ def send_summary(webhook_url: str, allocations: list[dict], reached_count: int, 
     _post_card(webhook_url, card_body)
 
 
-def send_price_drop_alert(webhook_url: str, deals: list[dict], gist_url: str | None = None) -> None:
-    """Send a price drop alert card to Teams. Max 10 items shown, with optional link to full list."""
-    shown = deals[:10]
+def _item_row(item: dict) -> dict:
+    """Build a single suggested-item row for the cart fill card."""
+    gtin = item["gtin"]
+    fid = item.get("fid", "")
+    slug = item.get("slug", "")
+    if fid and slug:
+        gtin_text = f"[{gtin}](https://www.qogita.com/products/{fid}/{slug}/)"
+    else:
+        gtin_text = gtin
+
+    discount_pct = f"-{item['discount']:.0%}" if item.get("discount") else ""
+
+    return {
+        "type": "ColumnSet",
+        "spacing": "Small",
+        "columns": [
+            {
+                "type": "Column",
+                "width": "stretch",
+                "items": [
+                    {
+                        "type": "TextBlock",
+                        "text": f"**{item['name'][:40]}**",
+                        "spacing": "None",
+                        "wrap": True,
+                    },
+                    {
+                        "type": "TextBlock",
+                        "text": gtin_text,
+                        "spacing": "None",
+                        "isSubtle": True,
+                        "size": "Small",
+                    },
+                ],
+            },
+            {
+                "type": "Column",
+                "width": "80px",
+                "items": [
+                    {
+                        "type": "TextBlock",
+                        "text": f"{item['priceCurrency']} {item['price']}",
+                        "spacing": "None",
+                        "weight": "Bolder",
+                        "horizontalAlignment": "Right",
+                    }
+                ],
+            },
+            {
+                "type": "Column",
+                "width": "50px",
+                "items": [
+                    {
+                        "type": "TextBlock",
+                        "text": discount_pct,
+                        "spacing": "None",
+                        "color": "Good",
+                        "weight": "Bolder",
+                        "horizontalAlignment": "Right",
+                    }
+                ],
+            },
+        ],
+    }
+
+
+def send_cart_fill_suggestions(
+    webhook_url: str,
+    suggestions: list[dict],
+    full_list_url: str | None = None,
+) -> None:
+    """Send cart fill suggestions card to Teams.
+
+    suggestions: list of dicts with keys:
+        allocation (dict with fid, mov, movCurrency, subtotal, gap),
+        items (list of item dicts)
+    """
+    total_items = sum(len(s["items"]) for s in suggestions)
 
     card_body = [
         {
             "type": "TextBlock",
-            "text": "PRICE DROP ALERT",
+            "text": "CART FILL SUGGESTIONS",
             "weight": "Bolder",
             "size": "Large",
             "color": "Good",
         },
         {
             "type": "TextBlock",
-            "text": f"**{len(deals)} items** below target",
+            "text": f"**{len(suggestions)} allocations** need items \u00b7 {total_items} suggestions",
             "spacing": "Small",
         },
     ]
 
-    for deal in shown:
-        discount_pct = f"-{deal['discount']:.0%}"
-        card_body.append(
-            {
-                "type": "ColumnSet",
-                "spacing": "Small",
-                "columns": [
-                    {
-                        "type": "Column",
-                        "width": "stretch",
-                        "items": [
-                            {
-                                "type": "TextBlock",
-                                "text": f"**{deal['name'][:40]}**",
-                                "spacing": "None",
-                                "wrap": True,
-                            },
-                            {
-                                "type": "TextBlock",
-                                "text": f"[{deal['gtin']}](https://www.qogita.com/products/{deal.get('fid', '')}/{deal.get('slug', '')}/)",
-                                "spacing": "None",
-                                "isSubtle": True,
-                                "size": "Small",
-                            },
-                        ],
-                    },
-                    {
-                        "type": "Column",
-                        "width": "80px",
-                        "items": [
-                            {
-                                "type": "TextBlock",
-                                "text": f"{deal['priceCurrency']} {deal['targetPrice']}",
-                                "spacing": "None",
-                                "isSubtle": True,
-                                "horizontalAlignment": "Right",
-                            }
-                        ],
-                    },
-                    {
-                        "type": "Column",
-                        "width": "80px",
-                        "items": [
-                            {
-                                "type": "TextBlock",
-                                "text": f"{deal['priceCurrency']} {deal['price']}",
-                                "spacing": "None",
-                                "weight": "Bolder",
-                                "horizontalAlignment": "Right",
-                            }
-                        ],
-                    },
-                    {
-                        "type": "Column",
-                        "width": "50px",
-                        "items": [
-                            {
-                                "type": "TextBlock",
-                                "text": discount_pct,
-                                "spacing": "None",
-                                "color": "Good",
-                                "weight": "Bolder",
-                                "horizontalAlignment": "Right",
-                            }
-                        ],
-                    },
-                ],
-            }
-        )
+    for s in suggestions:
+        alloc = s["allocation"]
+        items = s["items"]
+        currency = alloc["movCurrency"]
 
-    if len(deals) > 10:
-        overflow_text = f"*...and {len(deals) - 10} more*"
-        if gist_url:
-            overflow_text += f" — [View full list]({gist_url})"
+        # Allocation header
         card_body.append(
             {
                 "type": "TextBlock",
-                "text": overflow_text,
-                "isSubtle": True,
-                "spacing": "Small",
+                "text": f"**{alloc['fid']}** \u00b7 {currency} {alloc['subtotal']} / {alloc['mov']} MOV",
+                "spacing": "Medium",
+                "separator": True,
+            }
+        )
+        card_body.append(
+            {
+                "type": "TextBlock",
+                "text": f"Gap: **{currency} {alloc['gap']:,.2f}**",
+                "spacing": "None",
+                "color": "Attention",
+            }
+        )
+
+        # Show up to 3 items per allocation
+        for item in items[:3]:
+            card_body.append(_item_row(item))
+
+        if len(items) > 3:
+            card_body.append(
+                {
+                    "type": "TextBlock",
+                    "text": f"*...and {len(items) - 3} more from this supplier*",
+                    "isSubtle": True,
+                    "spacing": "Small",
+                }
+            )
+
+    if full_list_url:
+        card_body.append(
+            {
+                "type": "TextBlock",
+                "text": f"[View full list]({full_list_url})",
+                "spacing": "Medium",
+                "separator": True,
             }
         )
 

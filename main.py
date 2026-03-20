@@ -1,45 +1,106 @@
 import csv
-import io
 import logging
 import os
 import subprocess
 import sys
-from qogita_client import login, get_allocations, get_watchlist_deals, RateLimitError
-from teams_notifier import send_summary, send_price_drop_alert
+from qogita_client import login, get_allocations, get_supplier_watchlist_items, RateLimitError
+from teams_notifier import send_summary, send_cart_fill_suggestions
 from state import load_state, save_state
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 STATE_PATH = "state.json"
-GIST_ID = os.environ.get("GIST_ID", "")
+DEALS_CSV = "deals.csv"
+MAX_ALLOCATIONS = 5
 
 
-def update_gist(deals: list[dict]) -> str | None:
-    """Update the GitHub Gist with full deals CSV. Returns the gist URL or None on failure."""
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(["gtin", "name", "price", "currency", "target_price", "discount", "available_qty"])
-    for d in deals:
-        writer.writerow([
-            d["gtin"], d["name"], d["price"], d["priceCurrency"],
-            d["targetPrice"], f"{d['discount']:.0%}", d["availableQuantity"],
-        ])
+def write_deals_csv(suggestions: list[dict], path: str = DEALS_CSV) -> str | None:
+    """Write cart fill suggestions to a CSV file. Returns the GitHub URL or None."""
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["allocation_fid", "mov", "subtotal", "gap", "gtin", "name", "price", "currency", "discount", "available_qty"])
+        for s in suggestions:
+            alloc = s["allocation"]
+            for item in s["items"]:
+                writer.writerow([
+                    alloc["fid"], alloc["mov"], alloc["subtotal"],
+                    f"{alloc['gap']:.2f}",
+                    item["gtin"], item["name"], item["price"],
+                    item["priceCurrency"],
+                    f"{item['discount']:.0%}" if item.get("discount") else "",
+                    item["availableQuantity"],
+                ])
 
-    csv_content = buf.getvalue()
-    tmp_path = "/tmp/qogita_deals.csv"
-    with open(tmp_path, "w") as f:
-        f.write(csv_content)
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    if repo:
+        return f"https://github.com/{repo}/blob/master/{path}"
+    return None
 
+
+def _commit_and_push(*paths: str) -> bool:
+    """Stage, commit, and push specified files. Returns True on success."""
     try:
+        subprocess.run(["git", "add", *paths], check=True, capture_output=True, text=True)
+        result = subprocess.run(["git", "diff", "--cached", "--quiet"], capture_output=True)
+        if result.returncode == 0:
+            return True  # Nothing to commit
         subprocess.run(
-            ["gh", "gist", "edit", GIST_ID, "-f", "qogita_deals.csv", tmp_path],
+            ["git", "commit", "-m", "Update MOV notification state"],
             check=True, capture_output=True, text=True,
         )
-        return f"https://gist.github.com/Kalakata/{GIST_ID}"
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        logger.exception("Failed to update gist.")
-        return None
+        subprocess.run(["git", "pull", "--rebase"], check=True, capture_output=True, text=True)
+        subprocess.run(["git", "push"], check=True, capture_output=True, text=True)
+        return True
+    except subprocess.CalledProcessError:
+        logger.exception("Failed to commit and push state.")
+        return False
+
+
+def _get_cart_fill_suggestions(token: str, allocations: list[dict]) -> list[dict]:
+    """Find watchlist items that can fill unfilled allocations.
+
+    Returns list of dicts: {allocation: {..., gap}, items: [...]}
+    sorted by gap ascending (closest to MOV first).
+    """
+    unfilled = []
+    for a in allocations:
+        try:
+            prog = float(a.get("movProgress", "0"))
+            if prog < 1.0 and a.get("qid"):
+                gap = float(a["mov"]) - float(a["subtotal"])
+                if gap > 0:
+                    unfilled.append((gap, a))
+        except (ValueError, TypeError):
+            continue
+
+    unfilled.sort(key=lambda x: x[0])
+    top = unfilled[:MAX_ALLOCATIONS]
+
+    suggestions = []
+    for gap, alloc in top:
+        try:
+            items = get_supplier_watchlist_items(token, alloc["qid"])
+        except RateLimitError:
+            logger.warning("Rate limited during cart fill check. Stopping.")
+            break
+
+        if not items:
+            continue
+
+        suggestions.append({
+            "allocation": {
+                "qid": alloc["qid"],
+                "fid": alloc["fid"],
+                "mov": alloc["mov"],
+                "movCurrency": alloc["movCurrency"],
+                "subtotal": alloc["subtotal"],
+                "gap": gap,
+            },
+            "items": items,
+        })
+
+    return suggestions
 
 
 def run(email: str, password: str, webhook_url: str, state_path: str = STATE_PATH) -> None:
@@ -81,21 +142,29 @@ def run(email: str, password: str, webhook_url: str, state_path: str = STATE_PAT
     state["cart_qid"] = cart_qid
     state["notified"] = sorted(notified)
 
-    # --- Price drop check (hourly = every 60th run) ---
+    # --- Cart fill suggestions (hourly = every 60th run) ---
     run_count = state.get("run_count", 0) + 1
     state["run_count"] = run_count
 
-    if run_count % 60 == 0:
-        try:
-            deals = get_watchlist_deals(token)
-            if deals:
-                gist_url = update_gist(deals) if len(deals) > 10 and GIST_ID else None
-                send_price_drop_alert(webhook_url, deals, gist_url=gist_url)
-                logger.info("Price drop report: %d deals", len(deals))
-        except Exception:
-            logger.exception("Failed to check watchlist prices.")
-
+    # Save state immediately so the updated run_count is on disk
     save_state(state_path, state)
+
+    if run_count % 60 == 0:
+        # Commit+push state BEFORE sending notifications to prevent duplicate
+        # alerts caused by race conditions between consecutive workflow runs
+        _commit_and_push(state_path)
+
+        try:
+            suggestions = _get_cart_fill_suggestions(token, allocations)
+            if suggestions:
+                csv_url = write_deals_csv(suggestions)
+                send_cart_fill_suggestions(webhook_url, suggestions, full_list_url=csv_url)
+                if csv_url:
+                    _commit_and_push(state_path, DEALS_CSV)
+                total = sum(len(s["items"]) for s in suggestions)
+                logger.info("Cart fill suggestions: %d allocations, %d items", len(suggestions), total)
+        except Exception:
+            logger.exception("Failed to check cart fill suggestions.")
 
 
 def main():

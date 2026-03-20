@@ -9,8 +9,8 @@ def test_run_sends_summary_with_newly_reached(tmp_path):
         json.dump({}, f)
 
     allocations = [
-        {"fid": "A1", "movProgress": "1.05", "mov": "500.00", "movCurrency": "EUR", "subtotal": "525.00"},
-        {"fid": "B2", "movProgress": "0.50", "mov": "1000.00", "movCurrency": "EUR", "subtotal": "500.00"},
+        {"qid": "q1", "fid": "A1", "movProgress": "1.05", "mov": "500.00", "movCurrency": "EUR", "subtotal": "525.00"},
+        {"qid": "q2", "fid": "B2", "movProgress": "0.50", "mov": "1000.00", "movCurrency": "EUR", "subtotal": "500.00"},
     ]
 
     with patch("main.login", return_value=("tok", "cart-1")), \
@@ -40,7 +40,7 @@ def test_run_skips_already_notified(tmp_path):
         json.dump({"cart_qid": "cart-1", "notified": ["A1"]}, f)
 
     allocations = [
-        {"fid": "A1", "movProgress": "1.05", "mov": "500.00", "movCurrency": "EUR", "subtotal": "525.00"},
+        {"qid": "q1", "fid": "A1", "movProgress": "1.05", "mov": "500.00", "movCurrency": "EUR", "subtotal": "525.00"},
     ]
 
     with patch("main.login", return_value=("tok", "cart-1")), \
@@ -62,7 +62,7 @@ def test_run_resets_state_on_cart_change(tmp_path):
         json.dump({"cart_qid": "old-cart", "notified": ["X1"]}, f)
 
     allocations = [
-        {"fid": "A1", "movProgress": "1.00", "mov": "300.00", "movCurrency": "EUR", "subtotal": "300.00"},
+        {"qid": "q1", "fid": "A1", "movProgress": "1.00", "mov": "300.00", "movCurrency": "EUR", "subtotal": "300.00"},
     ]
 
     with patch("main.login", return_value=("tok", "new-cart")), \
@@ -107,9 +107,9 @@ def test_run_skips_allocation_with_non_numeric_mov_progress(tmp_path):
         json.dump({}, f)
 
     allocations = [
-        {"fid": "BAD1", "movProgress": "N/A", "mov": "500.00", "movCurrency": "EUR", "subtotal": "0.00"},
-        {"fid": "GOOD1", "movProgress": "1.05", "mov": "300.00", "movCurrency": "EUR", "subtotal": "315.00"},
-        {"fid": "MISSING", "mov": "100.00", "movCurrency": "EUR", "subtotal": "0.00"},
+        {"qid": "q1", "fid": "BAD1", "movProgress": "N/A", "mov": "500.00", "movCurrency": "EUR", "subtotal": "0.00"},
+        {"qid": "q2", "fid": "GOOD1", "movProgress": "1.05", "mov": "300.00", "movCurrency": "EUR", "subtotal": "315.00"},
+        {"qid": "q3", "fid": "MISSING", "mov": "100.00", "movCurrency": "EUR", "subtotal": "0.00"},
     ]
 
     with patch("main.login", return_value=("tok", "cart-1")), \
@@ -134,7 +134,7 @@ def test_run_does_not_save_fid_when_notification_fails(tmp_path):
         json.dump({}, f)
 
     allocations = [
-        {"fid": "FAIL1", "movProgress": "1.10", "mov": "400.00", "movCurrency": "EUR", "subtotal": "440.00"},
+        {"qid": "q1", "fid": "FAIL1", "movProgress": "1.10", "mov": "400.00", "movCurrency": "EUR", "subtotal": "440.00"},
     ]
 
     with patch("main.login", return_value=("tok", "cart-1")), \
@@ -152,23 +152,24 @@ def test_run_does_not_save_fid_when_notification_fails(tmp_path):
     assert "FAIL1" not in state.get("notified", [])
 
 
-def test_run_checks_prices_on_60th_run(tmp_path):
+def test_run_sends_cart_fill_on_60th_run(tmp_path):
     state_path = str(tmp_path / "state.json")
     with open(state_path, "w") as f:
         json.dump({"cart_qid": "cart-1", "notified": [], "run_count": 59}, f)
 
     allocations = [
-        {"fid": "X1", "movProgress": "0.50", "mov": "500.00", "movCurrency": "EUR", "subtotal": "250.00"},
+        {"qid": "alloc-1", "fid": "X1", "movProgress": "0.50", "mov": "500.00", "movCurrency": "EUR", "subtotal": "250.00"},
     ]
-    deals = [
-        {"gtin": "111", "name": "Deal", "price": "3.00", "priceCurrency": "EUR", "targetPrice": "10.00", "availableQuantity": 10, "discount": 0.70},
+    supplier_items = [
+        {"gtin": "111", "name": "Deal", "price": "3.00", "priceCurrency": "EUR", "availableQuantity": 10, "discount": 0.70, "fid": "p1", "slug": "deal"},
     ]
 
     with patch("main.login", return_value=("tok", "cart-1")), \
          patch("main.get_allocations", return_value=allocations), \
-         patch("main.get_watchlist_deals", return_value=deals) as mock_deals, \
+         patch("main.get_supplier_watchlist_items", return_value=supplier_items) as mock_items, \
          patch("main.send_summary"), \
-         patch("main.send_price_drop_alert") as mock_price:
+         patch("main.send_cart_fill_suggestions") as mock_fill, \
+         patch("main._commit_and_push"):
         run(
             email="a@b.com",
             password="pass",
@@ -176,28 +177,33 @@ def test_run_checks_prices_on_60th_run(tmp_path):
             state_path=state_path,
         )
 
-    mock_deals.assert_called_once()
-    mock_price.assert_called_once()
+    mock_items.assert_called_once_with("tok", "alloc-1")
+    mock_fill.assert_called_once()
+    suggestions = mock_fill.call_args[0][1]
+    assert len(suggestions) == 1
+    assert suggestions[0]["allocation"]["fid"] == "X1"
+    assert abs(suggestions[0]["allocation"]["gap"] - 250.0) < 0.01
+    assert suggestions[0]["items"] == supplier_items
 
     with open(state_path) as f:
         state = json.load(f)
     assert state["run_count"] == 60
 
 
-def test_run_skips_prices_on_non_60th_run(tmp_path):
+def test_run_skips_cart_fill_on_non_60th_run(tmp_path):
     state_path = str(tmp_path / "state.json")
     with open(state_path, "w") as f:
         json.dump({"cart_qid": "cart-1", "notified": [], "run_count": 2}, f)
 
     allocations = [
-        {"fid": "X1", "movProgress": "0.50", "mov": "500.00", "movCurrency": "EUR", "subtotal": "250.00"},
+        {"qid": "alloc-1", "fid": "X1", "movProgress": "0.50", "mov": "500.00", "movCurrency": "EUR", "subtotal": "250.00"},
     ]
 
     with patch("main.login", return_value=("tok", "cart-1")), \
          patch("main.get_allocations", return_value=allocations), \
-         patch("main.get_watchlist_deals") as mock_deals, \
+         patch("main.get_supplier_watchlist_items") as mock_items, \
          patch("main.send_summary"), \
-         patch("main.send_price_drop_alert") as mock_price:
+         patch("main.send_cart_fill_suggestions") as mock_fill:
         run(
             email="a@b.com",
             password="pass",
@@ -205,8 +211,8 @@ def test_run_skips_prices_on_non_60th_run(tmp_path):
             state_path=state_path,
         )
 
-    mock_deals.assert_not_called()
-    mock_price.assert_not_called()
+    mock_items.assert_not_called()
+    mock_fill.assert_not_called()
 
     with open(state_path) as f:
         state = json.load(f)

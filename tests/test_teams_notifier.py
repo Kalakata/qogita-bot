@@ -1,5 +1,5 @@
 from unittest.mock import patch, Mock
-from teams_notifier import send_summary, send_price_drop_alert
+from teams_notifier import send_summary, send_cart_fill_suggestions
 
 
 def test_send_summary_posts_card():
@@ -65,45 +65,61 @@ def test_send_summary_raises_on_failure():
             send_summary("https://webhook.example.com/hook", [], reached_count=0)
 
 
-def test_send_price_drop_alert_posts_card():
+def test_send_cart_fill_suggestions_posts_card():
     mock_resp = Mock()
     mock_resp.status_code = 202
     mock_resp.raise_for_status = Mock()
 
-    deals = [
-        {"gtin": "111", "name": "Maybelline Concealer 15 Fair", "price": "1.50", "priceCurrency": "EUR", "targetPrice": "2.89", "availableQuantity": 100, "discount": 0.4811},
-        {"gtin": "222", "name": "Rimmel Mascara Volume", "price": "2.00", "priceCurrency": "EUR", "targetPrice": "3.91", "availableQuantity": 50, "discount": 0.4885},
+    suggestions = [
+        {
+            "allocation": {"fid": "ABC123", "mov": "500.00", "movCurrency": "EUR", "subtotal": "412.00", "gap": 88.0},
+            "items": [
+                {"gtin": "111", "name": "Maybelline Concealer", "price": "5.17", "priceCurrency": "EUR", "discount": 0.22, "availableQuantity": 100, "fid": "p1", "slug": "maybelline-concealer"},
+                {"gtin": "222", "name": "Nivea Soft", "price": "2.54", "priceCurrency": "EUR", "discount": 0.15, "availableQuantity": 50, "fid": "p2", "slug": "nivea-soft"},
+            ],
+        },
     ]
 
     with patch("teams_notifier.requests.post", return_value=mock_resp) as mock_post:
-        send_price_drop_alert("https://webhook.example.com/hook", deals)
+        send_cart_fill_suggestions("https://webhook.example.com/hook", suggestions)
 
     mock_post.assert_called_once()
     payload = mock_post.call_args[1]["json"]
     card = payload["attachments"][0]["content"]
     card_str = str(card["body"])
-    assert "PRICE DROP" in card_str
+    assert "CART FILL" in card_str
+    assert "ABC123" in card_str
+    assert "88.00" in card_str
     assert "Maybelline" in card_str
-    assert "1.50" in card_str
-    assert "2.89" in card_str
-    assert "48%" in card_str
+    assert "5.17" in card_str
+    assert "22%" in card_str
 
 
-def test_send_price_drop_alert_limits_to_10():
+def test_send_cart_fill_suggestions_limits_items_per_allocation():
     mock_resp = Mock()
     mock_resp.status_code = 202
     mock_resp.raise_for_status = Mock()
 
-    deals = [
-        {"gtin": str(i), "name": f"Product {i}", "price": "1.00", "priceCurrency": "EUR", "targetPrice": "10.00", "availableQuantity": 10, "discount": 0.90}
-        for i in range(15)
+    items = [
+        {"gtin": str(i), "name": f"Product {i}", "price": "1.00", "priceCurrency": "EUR", "discount": 0.50, "availableQuantity": 10, "fid": "", "slug": ""}
+        for i in range(6)
+    ]
+
+    suggestions = [
+        {
+            "allocation": {"fid": "ALLOC1", "mov": "1000.00", "movCurrency": "EUR", "subtotal": "500.00", "gap": 500.0},
+            "items": items,
+        },
     ]
 
     with patch("teams_notifier.requests.post", return_value=mock_resp) as mock_post:
-        send_price_drop_alert("https://webhook.example.com/hook", deals)
+        send_cart_fill_suggestions("https://webhook.example.com/hook", suggestions)
 
     payload = mock_post.call_args[1]["json"]
     card = payload["attachments"][0]["content"]
     card_str = str(card["body"])
-    assert "Product 9" in card_str
-    assert "Product 10" not in card_str
+    assert "Product 0" in card_str
+    assert "Product 1" in card_str
+    assert "Product 2" in card_str
+    assert "Product 3" not in card_str  # Only top 3 shown
+    assert "3 more" in card_str
